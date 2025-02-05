@@ -24,5 +24,6 @@ dependencies:
   - seaborn
   - basemap
   - eofs
+  - scikit-learn
   - pip:
     - pyfesom2
