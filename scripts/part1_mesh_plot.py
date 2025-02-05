@@ -12,12 +12,12 @@ print(SCRIPT_NAME)
 update_status(SCRIPT_NAME, " Started")
 
 
-levels = np.linspace(5, 30, 11)
+
+#levels = np.linspace(5, 30, 11)
 figsize=(6,4.5)
 
-print('does data arrive here')
-print(data)
-
+mesh = pf.load_mesh(meshpath)
+data = xr.open_dataset(meshpath+'/fesom.mesh.diag.nc')
 nod_area = data['nod_area'][0,:].values
 nod_area = (np.sqrt(nod_area/np.pi)/1e3)*2
 
@@ -39,7 +39,7 @@ latreg=None,
 no_pi_mask=False,
 
 box=[-180, 180, -90, 90]
-res=[3600, 1800]
+res=[1440, 720]
 
 if not isinstance(data, list):
     data = [data]
@@ -78,11 +78,15 @@ interpolated = pf.interpolate_for_plot(
 
 data_model_mean = OrderedDict()
 
-fig, ax = plt.subplots(nrows=1, ncols=1,figsize=figsize, subplot_kw={'projection': ccrs.Robinson(central_longitude=-160)})
+fig, ax = plt.subplots(nrows=1, ncols=1,figsize=figsize, subplot_kw={'projection': ccrs.Robinson(central_longitude=0)})
+
 ax.add_feature(cfeature.COASTLINE,zorder=3)
 
+#imf=plt.contourf(lonreg, latreg, np.squeeze(interpolated), cmap=cmo.cm.thermal_r, 
+#                 levels=levels, extend='both',
+#                 transform=ccrs.PlateCarree(),zorder=1)
 imf=plt.contourf(lonreg, latreg, np.squeeze(interpolated), cmap=cmo.cm.thermal_r, 
-                 levels=levels, extend='both',
+                 extend='both',
                  transform=ccrs.PlateCarree(),zorder=1)
 
 ax.set_ylabel('K')
@@ -97,7 +101,11 @@ gl.xlabels_bottom = False
 
 cbar_ax_abs = fig.add_axes([0.15, 0.11, 0.7, 0.05])
 cbar_ax_abs.tick_params(labelsize=12)
-cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal',ticks=levels)
+
+#every_other_tick = levels[::2]  # Select every other level for labeling
+
+#cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal',ticks=every_other_tick)
+cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal')
 cb.set_label(label="Horizontal Resolution [km]", size='12')
 cb.ax.tick_params(labelsize='11')
 
@@ -105,6 +113,8 @@ ofile=out_path+'mesh_resolution'
     
 if ofile is not None:
     plt.savefig(ofile, dpi=dpi,bbox_inches='tight')
+
+
 
 
 # Mark as completed
