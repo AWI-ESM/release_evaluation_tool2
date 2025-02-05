@@ -25,5 +25,6 @@ dependencies:
   - basemap
   - eofs
   - scikit-learn
+  - natsort
   - pip:
     - pyfesom2

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pa
 import math
 from numpy.linalg import inv
-from set_inputarray import *
+from bg_routines.set_inputarray import *
 import copy as cp
 
 #+___INITIALISE/LOAD FESOM2.0 MESH CLASS IN MAIN PROGRAMM______________________+

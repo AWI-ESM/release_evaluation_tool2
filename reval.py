@@ -26,133 +26,9 @@ Key Features:
 2025-02-04: Jan Streffing:                Re-write has parallel scripts
 """
 
-############################
-# Module loading         #
-############################
-
-#Data access and structures
-import pyfesom2 as pf
-import xarray as xr
-from cdo import *   
-#cdo = Cdo(cdo='/home/awiiccp2/miniconda3/envs/pyfesom2/bin/cdo')
-from netCDF4 import Dataset
-import numpy as np
-import pandas as pd
-from collections import OrderedDict
-import csv
-from bg_routines.update_status import update_status
-
-#Plotting
-import math as ma
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import matplotlib.colors as colors
-from matplotlib.ticker import (MultipleLocator, FormatStrFormatter,
-                               AutoMinorLocator)
-from matplotlib.ticker import Locator
-from matplotlib import ticker
-from matplotlib import cm
-import seaborn as sns
-from cartopy import config
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from cartopy.util import add_cyclic_point
-from mpl_toolkits.basemap import Basemap
-import cmocean as cmo
-from cmocean import cm as cmof
-import matplotlib.pylab as pylab
-import matplotlib.patches as Polygon
-import matplotlib.ticker as mticker
-
-
-#Science
-import math
-from math import sqrt
-from sklearn.metrics import mean_squared_error
-from eofs.standard import Eof
-from eofs.examples import example_data_path
-import shapely
-from scipy import signal
-from scipy.stats import linregress
-from scipy.spatial import cKDTree
-from scipy.interpolate import CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator
-
-#Misc
 import os
-import warnings
-from tqdm import tqdm
-import logging
-import joblib
-import dask
-from dask.delayed import delayed
-from dask.diagnostics import ProgressBar
-import random as rd
-import time
-import copy as cp
 import subprocess
-
-#Fesom related routines
-from set_inputarray  import *
-from sub_fesom_mesh  import * 
-from sub_fesom_data  import * 
-from sub_fesom_moc   import *
-from colormap_c2c    import *
-
-
-############################
-# Simulation Configuration #
-############################
-
-#Name of model release
-model_version  = 'AWI-CM-v3.3'
-
-#Spinup
-spinup_path    = '/work/ab0246/a270092/runtime/awicm3-v3.3/SPIN/outdata/'
-spinup_name    = model_version+'_spinup'
-spinup_start   = 1350
-spinup_end     = 1849
-
-#Preindustrial Control
-pi_ctrl_path   = '/work/ab0246/a270092/runtime/awicm3-v3.3/PI/outdata/'
-pi_ctrl_name   = model_version+'_pi-control'
-pi_ctrl_start  = 1850
-pi_ctrl_end    = 2014
-
-#Historic
-historic_path  = '/work/ab0246/a270092/runtime/awicm3-v3.3/HIST/outdata//outdata/'
-historic_name  = model_version+'_historic'
-historic_start = 1850
-historic_end   = 2014
-
-
-#Misc
-reanalysis             = 'ERA5'
-remap_resolution       = '512x256'
-dpi                    = 300
-historic_last25y_start = 1989
-historic_last25y_end   = historic_end
-status_csv             = "log/status.csv"
-
-#Mesh
-mesh_name      = 'CORE2'
-grid_name      = 'TCo95'
-meshpath       = '/work/ab0246/a270092/input/fesom2/core2/'
-mesh_file      = 'mesh.nc'
-griddes_file   = 'mesh.nc'
-abg            = [0, 0, 0]
-reference_path = '/work/ab0246/a270092/postprocessing/climatologies/fdiag/'
-reference_name = 'clim'
-reference_years= 1958
-
-observation_path = '/work/ab0246/a270092/obs/'
-
-tool_path      = os.getcwd()
-out_path       = tool_path+'/output/plot/'+model_version+'/'
-mesh = pf.load_mesh(meshpath)
-data = xr.open_dataset(meshpath+'/mesh.nc')
-
-
+from natsort import natsorted
 
 
 ############################
@@ -162,8 +38,8 @@ data = xr.open_dataset(meshpath+'/mesh.nc')
 SBATCH_SETTINGS = """\
 #!/bin/bash
 #SBATCH --job-name={job_name}
-#SBATCH --output=logs/{job_name}.out
-#SBATCH --error=logs/{job_name}.err
+#SBATCH --output=logs/{job_name}.log
+#SBATCH --error=logs/{job_name}.log
 #SBATCH --time=2:00:00
 #SBATCH --mem=16G
 #SBATCH --ntasks=128
@@ -181,16 +57,18 @@ SBATCH_SETTINGS = """\
 # Ensure required directories exist
 os.makedirs("logs", exist_ok=True)
 
-# Locate all Python scripts in the "python_scripts" subfolder
-script_files = [f for f in os.listdir("scripts") if f.endswith(".py")]
+# Locate all Python scripts in the "scripts" subfolder
+script_files = natsorted(
+    [f for f in os.listdir("scripts") if f.endswith(".py") and f != "__init__.py"]
+)
 
 # Default: Disable all scripts (set to True to enable)
 SCRIPTS = {script: False for script in script_files}  # All disabled by default
 
 # Enable scripts manually here:
 SCRIPTS.update({
-    "part1_mesh_plot.py":           True,
-    "part2_rad_balance.py":         False,
+    "part1_mesh_plot.py":           False,
+    "part2_rad_balance.py":         True,
     "part3_hovm_temp.py":           False,  
     "part4_cmpi.py":                False,
     "part5_sea_ice_thickness.py":   False,
@@ -212,12 +90,13 @@ SCRIPTS.update({
 for script, run in SCRIPTS.items():
     if run:
         job_script = f"slurm_{script}.sh"
-        script_path = os.path.join("python_scripts", script)
+        script_path = os.path.join("scripts", script)
 
         # Write the SLURM script
         with open(job_script, "w") as f:
             f.write(SBATCH_SETTINGS.format(job_name=script))
-            f.write("\nmodule load python\n")  # Load Python module if required
+            f.write("\nsource /home/a/a270092/loadconda.sh\n")  # Load Python module if required
+            f.write("\nconda activate reval\n")  # Load Python module if required
             f.write(f"python {script_path}\n")
 
         # Submit job

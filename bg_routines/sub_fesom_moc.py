@@ -5,7 +5,7 @@ import os
 from netCDF4 import Dataset
 import matplotlib.pyplot as plt
 import matplotlib.patches as Polygon
-from colormap_c2c    import *
+from bg_routines.colormap_c2c    import *
 import matplotlib.path as mpltPath
 from matplotlib.tri import Triangulation
 from numba import jit, njit, prange

@@ -3,8 +3,8 @@ import numpy as np
 import time
 import os
 from netCDF4 import Dataset
-from set_inputarray import *
-from sub_fesom_mesh import *
+from bg_routines.set_inputarray import *
+from bg_routines.sub_fesom_mesh import *
 import matplotlib.pyplot as plt
 from matplotlib.tri import Triangulation
 import numpy.matlib

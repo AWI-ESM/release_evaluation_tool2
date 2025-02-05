@@ -1,20 +1,22 @@
-# Add the parent directory to sys.path
+# Add the parent directory to sys.path and load config
+import sys
+import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-# Now you can use from base import *
-from base import *
+from config import *
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
+print(SCRIPT_NAME)
+
 # Mark as started
-update_status(SCRIPT_NAME, "Analysis Started")
-
-
-
+update_status(SCRIPT_NAME, " Started")
 
 
 levels = np.linspace(5, 30, 11)
 figsize=(6,4.5)
+
+print('does data arrive here')
+print(data)
 
 nod_area = data['nod_area'][0,:].values
 nod_area = (np.sqrt(nod_area/np.pi)/1e3)*2
@@ -103,10 +105,8 @@ ofile=out_path+'mesh_resolution'
     
 if ofile is not None:
     plt.savefig(ofile, dpi=dpi,bbox_inches='tight')
-    os.system(f'convert {ofile} -trim {ofile}_trimmed.png')
-    os.system(f'mv {ofile}_trimmed.png {ofile}')
 
 
 # Mark as completed
-update_status(SCRIPT_NAME, "Analysis Completed")
+update_status(SCRIPT_NAME, " Completed")
 
