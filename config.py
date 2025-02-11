@@ -2,11 +2,27 @@
 # Module loading         #
 ############################
 
+#Misc
+import os
+import sys
+import warnings
+from tqdm import tqdm
+import logging
+import joblib
+import dask
+from dask.delayed import delayed
+from dask.diagnostics import ProgressBar
+import random as rd
+import time
+import copy as cp
+import subprocess
+
+
 #Data access and structures
 import pyfesom2 as pf
 import xarray as xr
 from cdo import *   
-#cdo = Cdo(cdo='/home/awiiccp2/miniconda3/envs/pyfesom2/bin/cdo')
+cdo = Cdo(cdo=os.path.join(sys.prefix, 'bin')+'/cdo')
 from netCDF4 import Dataset
 import numpy as np
 import pandas as pd
@@ -50,20 +66,6 @@ from scipy.stats import linregress
 from scipy.spatial import cKDTree
 from scipy.interpolate import CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator
 
-#Misc
-import os
-import sys
-import warnings
-from tqdm import tqdm
-import logging
-import joblib
-import dask
-from dask.delayed import delayed
-from dask.diagnostics import ProgressBar
-import random as rd
-import time
-import copy as cp
-import subprocess
 
 #Fesom related routines
 from bg_routines.set_inputarray  import *
@@ -93,7 +95,7 @@ pi_ctrl_start  = 1850
 pi_ctrl_end    = 2014
 
 #Historic
-historic_path  = '/work/ab0246/a270092/runtime/awicm3-v3.3/HIST/outdata//outdata/'
+historic_path  = '/work/ab0246/a270092/runtime/awicm3-v3.3/HIST/outdata/'
 historic_name  = model_version+'_historic'
 historic_start = 1850
 historic_end   = 2014
@@ -103,7 +105,7 @@ historic_end   = 2014
 reanalysis             = 'ERA5'
 remap_resolution       = '512x256'
 dpi                    = 300
-historic_last25y_start = 1989
+historic_last25y_start = historic_end-25
 historic_last25y_end   = historic_end
 status_csv             = "log/status.csv"
 
@@ -126,4 +128,5 @@ out_path       = tool_path+'/output/'+model_version+'/'
 os.makedirs(out_path, exist_ok=True)
 mesh = pf.load_mesh(meshpath)
 data = xr.open_dataset(meshpath+'/fesom.mesh.diag.nc')
+
 

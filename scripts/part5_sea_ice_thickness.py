@@ -1,140 +1,18 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# # Paths and config
-
-# In[9]:
-
-
-#Name of model release
-model_version  = 'TCo319-HIST'
-
-#Spinup
-spinup_path    = '/scratch/awiiccp5/ctl1950d/outdata/'
-spinup_name    = model_version+'_spinup'
-spinup_start   = 1850
-spinup_end     = 2134
-
-#Preindustrial Control
-pi_ctrl_path   = '/scratch/awiiccp5/ctl1950d/outdata/'
-pi_ctrl_name   = model_version+'_pi-control'
-pi_ctrl_start  = 1989
-pi_ctrl_end    = 2014
-
-#Historic
-historic_path  = '/scratch/awiiccp5/hi1950d/outdata/'
-historic_name  = model_version+'_historic'
-historic_start = 1989
-historic_end   = 2014
-
-
-# In[2]:
-
-
-#Misc
-reanalysis             = 'ERA5'
-remap_resolution       = '360x180'
-dpi                    = 300
-historic_last25y_start = historic_end-24
-historic_last25y_end   = historic_end
-
-#Mesh
-mesh_name      = 'DART'
-meshpath       = '/proj/awi/input/fesom2/dart/'
-mesh_file      = 'dart_griddes_nodes.nc'
-griddes_file   = 'dart_griddes_nodes.nc'
-abg            = [0, 0, 0]
-reference_path = '/proj/awiiccp5/climatologies/'
-reference_name = 'clim'
-reference_years= 1990
-
-observation_path = '/proj/awi/'
-
-
-# # Import libraries
-
-# In[3]:
-
-
-#Data access and structures
-import pyfesom2 as pf
-import xarray as xr
-from cdo import *   # python version
-cdo = Cdo(cdo='/home/awiiccp2/miniconda3/envs/pyfesom2/bin/cdo')
-from netCDF4 import Dataset
-import numpy as np
-import pandas as pd
-from collections import OrderedDict
-import csv
-
-#Plotting
-import math as ma
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import matplotlib.colors as colors
-from matplotlib.ticker import (MultipleLocator, FormatStrFormatter,
-                               AutoMinorLocator)
-from matplotlib.ticker import Locator
-from matplotlib import ticker
-from matplotlib import cm
-import seaborn as sns
-from cartopy import config
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from cartopy.util import add_cyclic_point
-from mpl_toolkits.basemap import Basemap
-import cmocean as cmo
-from cmocean import cm as cmof
-import matplotlib.pylab as pylab
-import matplotlib.patches as Polygon
-import matplotlib.ticker as mticker
-
-
-#Science
-import math
-from math import sqrt
-from sklearn.metrics import mean_squared_error
-from eofs.standard import Eof
-from eofs.examples import example_data_path
-import shapely
-from scipy import signal
-from scipy.stats import linregress
-from scipy.spatial import cKDTree
-from scipy.interpolate import CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator
-
-#Misc
+# Add the parent directory to sys.path and load config
+import sys
 import os
-import warnings
-from tqdm import tqdm
-import logging
-import joblib
-import dask
-from dask.delayed import delayed
-from dask.diagnostics import ProgressBar
-import random as rd
-import time
-import copy as cp
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from config import *
 
-#Fesom related routines
-from set_inputarray  import *
-from sub_fesom_mesh  import * 
-from sub_fesom_data  import * 
-from sub_fesom_moc   import *
-from colormap_c2c    import *
+SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
-tool_path      = os.getcwd()
-out_path       = tool_path+'/output/plot/'+model_version+'/'
+print(SCRIPT_NAME)
 
-
-# # Mesh plot
-# 
-
-# In[10]:
-
+# Mark as started
+update_status(SCRIPT_NAME, " Started")
 
 figsize=(6,4.5)
-
+remap_resolution= '360x180'
 
 # # Sea ice thickness
 
@@ -161,7 +39,7 @@ if input_names is None:
     for run in input_paths:
         run = os.path.join(run, '')
         input_names.append(run.split('/')[-2])
-        
+ 
 # Load fesom2 mesh
 mesh = pf.load_mesh(meshpath, abg=abg, 
                     usepickle=True, usejoblib=False)
@@ -182,8 +60,8 @@ data = OrderedDict()
 
 def load_parallel(variable,path,remap_resolution,meshpath,mesh_file):
     data1 = cdo.copy(input='-setmissval,nan -setctomiss,0 -remap,r'+remap_resolution+','+meshpath+'/weights_unstr_2_r'+remap_resolution+'.nc -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
+    np.shape(data1)
     return data1
-
 
 for exp_path, exp_name  in zip(input_paths, input_names):
 
@@ -376,4 +254,5 @@ for seas in ['September','March']:
 
             plt.savefig(out_path+"GIOMAS_"+seas+"_"+hemi+"_sea_ice_thickness.png",dpi=300,bbox_inches='tight')
 
-
+# Mark as completed
+update_status(SCRIPT_NAME, " Completed")

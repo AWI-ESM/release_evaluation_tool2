@@ -23,27 +23,88 @@ ofile = "radiation_budget.png"
 #3. Top net solar radiation
 #4. Top net thermal radiation
 
-# Load model Data
+# Load model data using cdo
 def load_parallel(variable,path):
     data1 = cdo.yearmean(input='-fldmean '+str(path),returnArray=variable)/accumulation_period
     return data1
 
-data = OrderedDict()
+
+
+import xarray as xr
+import pandas as pd
+
+def load_parallel_xr(variable, path):
+    try:
+        # Open dataset with correct backend
+        ds = xr.open_dataset(path, decode_times=False, engine="netcdf4")
+
+        # Ensure variable exists in dataset
+        if variable not in ds:
+            print(f"Warning: {variable} not found in {path}")
+            return None
+
+        da = ds[variable]  # Extract only the DataArray
+
+        # Identify correct time variable (choose `time_counter` or `time_centered`)
+        if "time_counter" in ds:
+            time_var = "time_counter"
+        elif "time_centered" in ds:
+            time_var = "time_centered"
+        else:
+            print(f"Error: No valid time variable found in {path}")
+            return None
+
+        # Rename time dimension if needed
+        if time_var in da.dims:
+            da = da.rename({time_var: "time"})
+
+        # Convert time from seconds since 1775-01-01 to datetime
+        time_units = ds[time_var].attrs.get("units", "seconds since 1775-01-01 00:00:00")
+        da["time"] = pd.to_datetime(ds[time_var].values, origin="1775-01-01", unit="s")
+
+        # Compute spatial mean (latitude, longitude)
+        da = da.mean(dim=["lat", "lon"])
+
+        # Resample to yearly mean (equivalent to `cdo yearmean`)
+        da = da.resample(time="YE").mean()  # 'YE' is the correct yearly frequency
+
+        # Normalize by accumulation period
+        da = da / accumulation_period
+
+        ds.close()  # Close dataset to prevent locks
+
+        return da.values  # Return NumPy array
+
+    except Exception as e:
+        print(f"Error processing {path}: {e}")
+        return None
+
+data = {}
 
 for v in var:
-
-    datat = []
-    t = []
-    temporary = []
+    tasks = []
     for exp in tqdm(exps):
+        path = f"{spinup_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
+        tasks.append(dask.delayed(load_parallel)(v, path))  # Use delayed execution
 
-        path = spinup_path+'/oifs/atm_remapped_1m_'+v+'_1m_'+f'{exp:04d}-{exp:04d}.nc'
-        temporary = dask.delayed(load_parallel)(v,path)
-        t.append(temporary)
+    try:
+        with ProgressBar():
+            datat = dask.compute(*tasks, scheduler='threads')  # Use threaded execution
 
-    with ProgressBar():
-        datat = dask.compute(t)
-    data[v] = np.squeeze(datat)
+        # Ensure only valid (non-None) results are stored
+        datat = [d for d in datat if d is not None]
+
+    except Exception as e:
+        print(f"Parallel loading failed for {v}, falling back to serial execution. Error: {e}")
+        datat = []
+        for exp in tqdm(exps):
+            path = f"{spinup_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
+            result = load_parallel(v, path)  # Serial execution
+            if result is not None:
+                datat.append(result)
+
+    data[v] = np.squeeze(np.array(datat)) if datat else None  # Handle missing variables
+
 
 #Calculate budget:
 surface =   np.squeeze(data['ssr']).flatten() + \

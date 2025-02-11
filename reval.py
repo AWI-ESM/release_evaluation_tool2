@@ -40,7 +40,7 @@ SBATCH_SETTINGS = """\
 #SBATCH --job-name={job_name}
 #SBATCH --output=logs/{job_name}.log
 #SBATCH --error=logs/{job_name}.log
-#SBATCH --time=2:00:00
+#SBATCH --time=00:10:00
 #SBATCH --mem=16G
 #SBATCH --ntasks=128
 #SBATCH --ntasks-per-node=128
@@ -68,10 +68,10 @@ SCRIPTS = {script: False for script in script_files}  # All disabled by default
 # Enable scripts manually here:
 SCRIPTS.update({
     "part1_mesh_plot.py":           False,
-    "part2_rad_balance.py":         True,
+    "part2_rad_balance.py":         False,
     "part3_hovm_temp.py":           False,  
     "part4_cmpi.py":                False,
-    "part5_sea_ice_thickness.py":   False,
+    "part5_sea_ice_thickness.py":   True,
     "part6_ice_conc_timeseries.py": False,
     "part7_mld.py":                 False,
     "part8_t2m_vs_era5.py":         False,
@@ -100,8 +100,10 @@ for script, run in SCRIPTS.items():
             f.write(f"python {script_path}\n")
 
         # Submit job
+        print(f"Submitting {script} as:")
         subprocess.run(["sbatch", job_script])
-        print(f"Submitted {script}")
+        print(f"___________________________")
     else:
         print(f"Skipped {script} (disabled)")
+        print(f"___________________________")
 
