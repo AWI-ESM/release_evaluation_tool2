@@ -14,34 +14,20 @@ update_status(SCRIPT_NAME, " Started")
 # # Hovmöller diagram Temperature
 figsize=(7.2, 3.8)
 
-
 # Load model Data
 data = OrderedDict()
 
-mesh = pf.load_mesh(meshpath)
 variable='temp'
 ofile = 'Hovmoeller_'+variable+'.png'
 
 input_paths = [spinup_path+'/fesom/']
 input_names = [spinup_name]
 years = range(spinup_start, spinup_end+1)
-#years = range(1581, 1583)
 
 maxdepth = 10000
 
 levels = [-1.5, 1.5, 11]
 mapticks = np.arange(levels[0],levels[1],0.1)
-
-# Define paths
-output_weights = f"{meshpath}/weights_unstr_2_r{remap_resolution}.nc"
-
-if not os.path.exists(output_weights):
-    # Generate the weight file
-    cdo.genycon(
-        f"r{remap_resolution}",
-        input=f"-selname,cell_area -setgrid,{meshpath}/{mesh_file} {meshpath}/{mesh_file}",
-        output=output_weights
-    )
 
 
 # Load reference data
@@ -54,41 +40,88 @@ def load_parallel(variable,path,remap_resolution,meshpath,mesh_file):
     return data1
 
 
-for exp_path, exp_name  in zip(input_paths, input_names):
+batch_size = 50  # Limit to 50 files at a time
 
-    datat = []
-    t = []
-    temporary = []
-    for year in tqdm(years):
-        path = exp_path+'/'+variable+'.fesom.'+str(year)+'.nc'
-        temporary = dask.delayed(load_parallel)(variable,path,remap_resolution,meshpath,mesh_file)
-        t.append(temporary)
+for exp_path, exp_name in zip(input_paths, input_names):
+    data[exp_name] = []
+    temp_results = []
 
-    with ProgressBar():
-        datat = dask.compute(*t, scheduler='threads')
-    data[exp_name] = np.squeeze(datat)
+    # Process in batches
+    for i in range(0, len(years), batch_size):
+        batch_years = years[i : i + batch_size]  # Get a batch of 50 years
+        t = []
+
+        for year in batch_years:
+            path = f"{exp_path}/{variable}.fesom.{year}.nc"
+            temp = dask.delayed(load_parallel)(variable, path, remap_resolution, meshpath, mesh_file)
+            t.append(temp)
+
+        with ProgressBar():
+            batch_data = dask.compute(*t)  # Compute only the current batch
+            temp_results.extend(batch_data)
+    data[exp_name] = np.array(data[exp_name], dtype=np.float64)
+    data[exp_name] = np.squeeze(np.array(temp_results, dtype=object))
+    print(np.shape(data[exp_name]))
+    print(data[exp_name])
+    #data[exp_name] = np.squeeze(temp_results)
+
 
     
 # Read depths from 3D file, since mesh.zlevs is empty..
 depths = pd.read_csv(meshpath+'/aux3d.out',  nrows=mesh.nlev) 
-print(depths)
-depths = depths.to_numpy()  # Convert pandas Series to NumPy array
-
 
 # Reshape data and expand reference climatology to length for data in preparation for Hovmöller diagram
 data_ref_expand = OrderedDict()
-for exp_name  in input_names:
-    data[exp_name] = np.flip(np.squeeze(data[exp_name]),axis=1)
-    
-data_ref_expand = np.tile(data_ref,(np.shape(data[exp_name])[0],1)).T
+
+
+
+# Get the shape of the data
+data_shape = np.shape(data[exp_name][0])
+print(f"Data shape for first entry: {data_shape}")
+print(f"Expected depth count: {len(depths)-1}")
+print(f"Number of years in data: {len(data[exp_name])}")
+
+# Initialize newdata array
+newdata = np.empty((len(depths)-1, len(data[exp_name])), dtype=np.float64)  # Avoid NoneType issues
+print(f"Newdata shape: {np.shape(newdata)}")
+
+# Iterate through the data and populate newdata
+for i in range(len(data[exp_name])):
+    try:
+        reshaped_data = np.array(data[exp_name][i]).squeeze()  # Remove unnecessary dimensions
+        
+        # Handle different cases
+        if reshaped_data.shape == (len(depths)-1,):
+            newdata[:, i] = reshaped_data  # Correct shape
+        elif len(reshaped_data.shape) > 1 and reshaped_data.shape[0] > 1:
+            print(f"Warning: Multiple entries at year index {i}, taking the first one.")
+            newdata[:, i] = reshaped_data[0]  # Take the first entry if multiple exist
+        else:
+            raise ValueError(f"Unexpected shape {reshaped_data.shape} at year index {i}")  # Catch any unhandled cases
+
+    except Exception as e:
+        print(f"Skipping index {i} due to error: {e}")
+        newdata[:, i] = np.nan  # Assign NaN to prevent NoneType issues
+
+# Transpose and update data
+data[exp_name] = newdata.T
+
+# Expand reference data
+data_ref_expand = np.tile(data_ref, (np.shape(data[exp_name])[0], 1))
+
+# Debugging print to verify no NoneType issues
+print(f"Final data shape: {np.shape(data[exp_name])}, dtype: {data[exp_name].dtype}")
+
+
+
 
 # Flip data for contourf plot
 data_diff = OrderedDict()
 for exp_name in input_names:
-    data_diff[exp_name]=np.flip(data[exp_name].T,axis=0)-data_ref_expand
+    data_diff[exp_name]=data[exp_name]-data_ref_expand
     
 # Prepare coordianates for contourf plot
-X,Y = np.meshgrid(years,depths[:len(depths)-1])  # Use full depths list
+X,Y = np.meshgrid(years,depths[:len(depths)-1])
 
 # Calculate number of rows and columns for plot
 def define_rowscol(input_paths, columns=len(input_paths), reduce=0):
@@ -151,12 +184,13 @@ else:
 
 i = 0
 for exp_name in data_diff:
-    im = axes[i].contourf(X,-Y,data_diff[exp_name],levels=mapticks, cmap=cm.PuOr_r, extend='both')
+    data_diff[exp_name] = np.array(data_diff[exp_name], dtype=np.float64)
+    im = axes[i].contourf(X,Y,data_diff[exp_name].T,levels=mapticks, cmap=cm.PuOr_r, extend='both')
     axes[i].set_title('Global ocean temperature bias',fontweight="bold")
     axes[i].set_ylabel('Depth [m]',size=13)
     axes[i].set_xlabel('Year',size=13)
     axes[i].xaxis.set_major_formatter(FormatStrFormatter('%.0f'))
-    axes[i].set_ylim([min(depths), 0])
+    axes[i].set_ylim(-maxdepth)
     axes[i].set_yscale('symlog')
     axes[i].xaxis.set_minor_locator(MultipleLocator(10))
 
@@ -181,6 +215,8 @@ except:
 
 cbar.ax.tick_params(labelsize=12) 
 cbar.ax.tick_params(labelsize=12) 
+
+
 
 if out_path+ofile is not None:
     plt.savefig(out_path+ofile, dpi=dpi,bbox_inches='tight')

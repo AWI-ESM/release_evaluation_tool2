@@ -1,135 +1,19 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# # Paths and config
-
-# In[9]:
-
-
-#Name of model release
-model_version  = 'TCo319-HIST'
-
-#Spinup
-spinup_path    = '/scratch/awiiccp5/ctl1950d/outdata/'
-spinup_name    = model_version+'_spinup'
-spinup_start   = 1850
-spinup_end     = 1950
-
-#Preindustrial Control
-pi_ctrl_path   = '/scratch/awiiccp5/ctl1950d/outdata/'
-pi_ctrl_name   = model_version+'_pi-control'
-pi_ctrl_start  = 1950
-pi_ctrl_end    = 2014
-
-#Historic
-historic_path  = '/scratch/awiiccp5/hi1950d/outdata/'
-historic_name  = model_version+'_historic'
-historic_start = 1950
-historic_end   = 2014
-
-
-# In[2]:
-
-
-#Misc
-reanalysis             = 'ERA5'
-remap_resolution       = '360x180'
-dpi                    = 300
-historic_last25y_start = historic_end-24
-historic_last25y_end   = historic_end
-
-#Mesh
-mesh_name      = 'DART'
-meshpath       = '/proj/awi/input/fesom2/dart/'
-mesh_file      = 'dart_griddes_nodes.nc'
-griddes_file   = 'dart_griddes_nodes.nc'
-abg            = [0, 0, 0]
-reference_path = '/proj/awiiccp5/climatologies/'
-reference_name = 'clim'
-reference_years= 1990
-
-observation_path = '/proj/awi/'
-
-
-# # Import libraries
-
-# In[3]:
-
-
-#Data access and structures
-import pyfesom2 as pf
-import xarray as xr
-from cdo import *   # python version
-cdo = Cdo(cdo='/home/awiiccp2/miniconda3/envs/pyfesom2/bin/cdo')
-from netCDF4 import Dataset
-import numpy as np
-import pandas as pd
-from collections import OrderedDict
-import csv
-
-#Plotting
-import math as ma
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import matplotlib.colors as colors
-from matplotlib.ticker import (MultipleLocator, FormatStrFormatter,
-                               AutoMinorLocator)
-from matplotlib.ticker import Locator
-from matplotlib import ticker
-from matplotlib import cm
-import seaborn as sns
-from cartopy import config
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from cartopy.util import add_cyclic_point
-from mpl_toolkits.basemap import Basemap
-import cmocean as cmo
-from cmocean import cm as cmof
-import matplotlib.pylab as pylab
-import matplotlib.patches as Polygon
-import matplotlib.ticker as mticker
-
-
-#Science
-import math
-from math import sqrt
-from sklearn.metrics import mean_squared_error
-from eofs.standard import Eof
-from eofs.examples import example_data_path
-import shapely
-from scipy import signal
-from scipy.stats import linregress
-from scipy.spatial import cKDTree
-from scipy.interpolate import CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator
-
-#Misc
+# Add the parent directory to sys.path and load config
+import sys
 import os
-import warnings
-from tqdm import tqdm
-import logging
-import joblib
-import dask
-from dask.delayed import delayed
-from dask.diagnostics import ProgressBar
-import random as rd
-import time
-import copy as cp
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from config import *
 
-#Fesom related routines
-from set_inputarray  import *
-from sub_fesom_mesh  import * 
-from sub_fesom_data  import * 
-from sub_fesom_moc   import *
-from colormap_c2c    import *
+SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
-tool_path      = os.getcwd()
-out_path       = tool_path+'/output/plot/'+model_version+'/'
+print(SCRIPT_NAME)
 
-mesh = pf.load_mesh(meshpath)
-data = xr.open_dataset(meshpath+'/fesom.mesh.diag.nc')
+# Mark as started
+update_status(SCRIPT_NAME, " Started")
 
-#%%capture
+
+
+
 runs=[spinup_name, historic_name, pi_ctrl_name]
 
 runid ='fesom'
@@ -190,7 +74,6 @@ for exp in runs:
     extent_south_march = []
     extent_north_sep = []
     extent_south_sep = []       
-        
     for y in tqdm(range(year_start, year_end)): 
         for x in range(2, 3):
             data = pf.get_data(datapath, str_id, y, mesh, records=[x])
@@ -307,15 +190,15 @@ for exp in runs:
     if exp == pi_ctrl_name: 
         datapath   = pi_ctrl_path+'/fesom'
         year_start = pi_ctrl_start
-        year_end   = pi_ctrl_end
+        year_end   = pi_ctrl_end-1
     elif exp == historic_name: 
         datapath   = historic_path+'/fesom'
         year_start = historic_start
-        year_end   = historic_end
+        year_end   = historic_end-1
     elif exp == spinup_name: 
         datapath   = spinup_path+'/fesom'
         year_start = spinup_start
-        year_end   = spinup_end
+        year_end   = spinup_end-1
  
     extent_north_march = []
     extent_south_march = []
@@ -375,10 +258,10 @@ ax1.set_xlabel('Year', fontsize=17)
 
 ax1.yaxis.grid(color='gray', linestyle='dashed')
 
-plt.axvline(x=1950,color='black',alpha=0.7,linewidth=3)
+plt.axvline(x=1850,color='black',alpha=0.7,linewidth=3)
 #plt.axvline(x=1650,color='grey',alpha=0.5,linewidth=3)
-plt.text(1960,ax1.get_ylim()[1]-2,'HIST & PICT',fontsize=15)
-plt.text(1910,ax1.get_ylim()[1]-2,'SPIN',fontsize=15)
+plt.text(1860,ax1.get_ylim()[1]-2,'HIST & PICT',fontsize=15)
+plt.text(1810,ax1.get_ylim()[1]-2,'SPIN',fontsize=15)
 
 ax1.xaxis.set_major_locator(MultipleLocator(50))
 ax1.xaxis.set_major_formatter(FormatStrFormatter('%d'))
@@ -392,3 +275,7 @@ ax1.xaxis.set_minor_locator(MultipleLocator(10))
 legend=['Arctic March','Arctic September','Antarctic March','Antarctic September']
 plt.legend(legend,loc='upper left',fontsize=15)
 plt.savefig(out_path+"sea_ice_extent_comparison.png",dpi=300,bbox_inches = "tight")
+
+
+# Mark as completed
+update_status(SCRIPT_NAME, " Completed")

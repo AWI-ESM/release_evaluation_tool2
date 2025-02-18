@@ -1,364 +1,147 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# # Paths and config
-
-# In[9]:
-
-
-#Name of model release
-model_version  = 'TCo319-HIST'
-
-#Spinup
-spinup_path    = '/scratch/awiiccp5/ctl1950d/outdata/'
-spinup_name    = model_version+'_spinup'
-spinup_start   = 1850
-spinup_end     = 2134
-
-#Preindustrial Control
-pi_ctrl_path   = '/scratch/awiiccp5/ctl1950d/outdata/'
-pi_ctrl_name   = model_version+'_pi-control'
-pi_ctrl_start  = 1850
-pi_ctrl_end    = 2134
-
-#Historic
-historic_path  = '/scratch/awiiccp5/hi1950d/outdata/'
-historic_name  = model_version+'_historic'
-historic_start = 1950
-historic_end   = 2014
-
-
-# In[2]:
-
-
-#Misc
-reanalysis             = 'ERA5'
-remap_resolution       = '360x180'
-dpi                    = 300
-historic_last25y_start = historic_end-24
-historic_last25y_end   = historic_end
-
-#Mesh
-mesh_name      = 'DART'
-meshpath       = '/proj/awi/input/fesom2/dart/'
-mesh_file      = 'dart_griddes_nodes.nc'
-griddes_file   = 'dart_griddes_nodes.nc'
-abg            = [0, 0, 0]
-reference_path = '/proj/awiiccp5/climatologies/'
-reference_name = 'clim'
-reference_years= 1990
-
-observation_path = '/proj/awi/'
-
-
-# # Import libraries
-
-# In[3]:
-
-
-#Data access and structures
-import pyfesom2 as pf
-import xarray as xr
-from cdo import *   # python version
-cdo = Cdo(cdo='/home/awiiccp2/miniconda3/envs/pyfesom2/bin/cdo')
-from netCDF4 import Dataset
-import numpy as np
-import pandas as pd
-from collections import OrderedDict
-import csv
-
-#Plotting
-import math as ma
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import matplotlib.colors as colors
-from matplotlib.ticker import (MultipleLocator, FormatStrFormatter,
-                               AutoMinorLocator)
-from matplotlib.ticker import Locator
-from matplotlib import ticker
-from matplotlib import cm
-import seaborn as sns
-from cartopy import config
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from cartopy.util import add_cyclic_point
-from mpl_toolkits.basemap import Basemap
-import cmocean as cmo
-from cmocean import cm as cmof
-import matplotlib.pylab as pylab
-import matplotlib.patches as Polygon
-import matplotlib.ticker as mticker
-
-
-#Science
-import math
-from math import sqrt
-from sklearn.metrics import mean_squared_error
-from eofs.standard import Eof
-from eofs.examples import example_data_path
-import shapely
-from scipy import signal
-from scipy.stats import linregress
-from scipy.spatial import cKDTree
-from scipy.interpolate import CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator
-
-#Misc
+# Add the parent directory to sys.path and load config
+import sys
 import os
-import warnings
-from tqdm import tqdm
-import logging
-import joblib
-import dask
-from dask.delayed import delayed
-from dask.diagnostics import ProgressBar
-import random as rd
-import time
-import copy as cp
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from config import *
 
-#Fesom related routines
-from set_inputarray  import *
-from sub_fesom_mesh  import * 
-from sub_fesom_data  import * 
-from sub_fesom_moc   import *
-from colormap_c2c    import *
+SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
-tool_path      = os.getcwd()
-out_path       = tool_path+'/output/plot/'+model_version+'/'
+print(SCRIPT_NAME)
+
+# Mark as started
+update_status(SCRIPT_NAME, " Started")
 
 mesh = pf.load_mesh(meshpath)
 
-# parameters cell
+
+
+# -------------------------------
+# Function Definitions
+# -------------------------------
+
+def define_rowscol(input_paths, columns=2, reduce=0):
+    """Calculate the number of rows and columns for subplots."""
+    number_paths = len(input_paths) - reduce
+    ncol = min(number_paths, columns)
+    nrows = math.ceil(number_paths / columns)
+    return [nrows, ncol]
+
+def load_parallel(variable, path, remap_resolution, meshpath, mesh_file):
+    """Load data in parallel using CDO."""
+    data1 = cdo.yseasmean(
+        input=f'-setmissval,nan -setctomiss,0 -remap,r{remap_resolution},{meshpath}/weights_unstr_2_r{remap_resolution}.nc -setgrid,{meshpath}/{mesh_file} {path}',
+        returnArray=variable
+    )
+    return data1
+
+def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
+    """Truncate a colormap."""
+    new_cmap = colors.LinearSegmentedColormap.from_list(
+        f'trunc({cmap.name},{minval:.2f},{maxval:.2f})',
+        cmap(np.linspace(minval, maxval, n))
+    )
+    return new_cmap
+
+def plot_data(variable, hemisphere, projection, extent, filename, levels, factor, new_cmap, extend):
+    fig = plt.figure(figsize=(6,6))
+    ax = plt.axes(projection=projection)
+    ax.add_feature(cfeature.COASTLINE, zorder=3)
+    ax.set_extent(extent, ccrs.PlateCarree())
+    
+    depth_index = 3  # Choosing a consistent depth level
+    data_2d = factor * data_model_mean[exp_name][depth_index, :, :]
+    
+    imf = ax.contourf(lon, lat, data_2d, cmap=new_cmap, levels=levels, extend=extend,
+                      transform=ccrs.PlateCarree(), zorder=1)
+    ax.contour(lon, lat, data_2d, levels=levels, colors='black', linewidths=0.2,
+               transform=ccrs.PlateCarree(), zorder=1)
+    
+    ax.set_title(f"{variable} - {hemisphere}", fontweight="bold")
+    cb = plt.colorbar(imf, orientation='horizontal', fraction=0.046, pad=0.04)
+    cb.set_label(f"{variable} value")
+    
+    plt.savefig(os.path.join(out_path, filename), dpi=300, bbox_inches='tight')
+    print(f"Saved {filename}")
+
+
+
+# -------------------------------
+# Initialization
+# -------------------------------
+
 variables = ['MLD2', 'a_ice']
 input_paths = [historic_path+'/fesom/']
 input_names = [historic_name]
 years = range(historic_last25y_start, historic_last25y_end+1)
+batch_size = 20  # Process files in batches
 
-figsize=(6,4.5)
-levels = [0, 3000, 11]
-units = r'$^\circ$C'
-columns = 2
-ofile = 'mld.png'
-region = "Global Ocean"
 
-# Load fesom2 mesh
-mesh = pf.load_mesh(meshpath, abg=abg, 
-                    usepickle=True, usejoblib=False)
+# -------------------------------
+# Data Loading
+# -------------------------------
 
-# Set number of columns, in case of multiple variables
-def define_rowscol(input_paths, columns=len(input_paths), reduce=0):
-    number_paths = len(input_paths) - reduce
-#     columns = columns
-    if number_paths < columns:
-        ncol = number_paths
-    else:
-        ncol = columns
-    nrows = math.ceil(number_paths / columns)
-    return [nrows, ncol]
-
+data = OrderedDict()
 for variable in variables:
-
-    # Load model Data
-    data = OrderedDict()
-
-    def load_parallel(variable,path,remap_resolution,meshpath,mesh_file):
-        data1 = cdo.yseasmean(input='-setmissval,nan -setctomiss,0 -remap,r'+remap_resolution+','+meshpath+'/weights_unstr_2_r'+remap_resolution+'.nc -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
-        return data1
-
-
-    for exp_path, exp_name  in zip(input_paths, input_names):
-
-        datat = []
-        t = []
-        temporary = []
-        for year in tqdm(years):
-            path = exp_path+'/'+variable+'.fesom.'+str(year)+'.nc'
-            temporary = dask.delayed(load_parallel)(variable,path,remap_resolution,meshpath,mesh_file)
-            t.append(temporary)
-
-        with ProgressBar():
-            datat = dask.compute(t)
-        data[exp_name] = np.squeeze(datat)
+    for exp_path, exp_name in zip(input_paths, input_names):
+        data[exp_name] = []
+        for i in range(0, len(years), batch_size):
+            batch_years = years[i : i + batch_size]
+            t = [dask.delayed(load_parallel)(variable, f"{exp_path}/{variable}.fesom.{year}.nc", remap_resolution, meshpath, mesh_file) for year in tqdm(batch_years)]
+            with ProgressBar():
+                batch_data = dask.compute(*t, scheduler='threads')
+            data[exp_name].extend(batch_data)
+        data[exp_name] = np.squeeze(np.array(data[exp_name], dtype=object))
 
 
-    def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
-        new_cmap = colors.LinearSegmentedColormap.from_list(
-            'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
-            cmap(np.linspace(minval, maxval, n)))
-        return new_cmap
-
-
-    if variable == 'a_ice':
-        data[exp_name][0][np.isnan(data[exp_name][0])] = 0
-        data[exp_name][3][np.isnan(data[exp_name][3])] = 0
+    # -------------------------------
+    # Data Processing
+    # -------------------------------
 
     data_model_mean = OrderedDict()
-    figsize=(6,6)
-
-    if variable == 'a_ice':
-        levels = np.linspace(0,100,11).astype(int)
-        levels = [1,10,20,30,40,50,60,70,80,90,100]
-        factor=100
-        #new_cmap = truncate_colormap(plt.cm.PuOr_r, 0.08, 0.5)
-        new_cmap = truncate_colormap(cmo.cm.ice, 0.15, 1)
-        extend='min'
-
-    else:
-        levels = [0, 0.2, 0.5,  1,  2, 2.5,  3, 3.5, 4]
-        factor=-0.001
-        new_cmap = truncate_colormap(plt.cm.PuOr, 0.5, 1)
-        extend='both'
-
-
-
     for exp_name in input_names:
-        data_model_mean[exp_name] = data[exp_name]
+        data_model_mean[exp_name] = np.array(data[exp_name], dtype=np.float64)
+        print(f"Checking {exp_name}: shape={np.shape(data_model_mean[exp_name])}")
+        if np.size(data_model_mean[exp_name]) == 0:
+            print(f"Error: {exp_name} contains no valid data!")
+            continue  # Skip this experiment if it's empty
         if len(np.shape(data_model_mean[exp_name])) > 2:
-            data_model_mean[exp_name] = np.nanmean(data_model_mean[exp_name],axis=0)
+            if np.isnan(data_model_mean[exp_name]).all():
+                print(f"Warning: {exp_name} contains only NaNs. Filling with zeros.")
+                data_model_mean[exp_name] = np.zeros_like(data_model_mean[exp_name][0])
+            else:
+                data_model_mean[exp_name] = np.nanmean(data_model_mean[exp_name], axis=0)
+        print(f"Final shape after nanmean: {np.shape(data_model_mean[exp_name])}")
 
-    print(np.shape(data_model_mean[exp_name]))
-
-    lon = np.arange(0, 360, 1)
-    lat = np.arange(-90, 90, 1)
+    lon_size = data_model_mean[historic_name].shape[-1]
+    lat_size = data_model_mean[exp_name].shape[-2]
+    lon = np.linspace(0, 360, lon_size, endpoint=False)
+    lat = np.linspace(-90, 90, lat_size)
     data_model_mean[historic_name], lon = add_cyclic_point(data_model_mean[historic_name], coord=lon)
 
-    nrows, ncol = define_rowscol(input_paths)
-    fig =plt.figure(figsize=(6,6))
+    # -------------------------------
+    # Plotting Configuration
+    # -------------------------------
 
-
-    ax=plt.axes(projection=ccrs.SouthPolarStereo())
-    ax.add_feature(cfeature.COASTLINE,zorder=3)
-    ax.set_extent([-180,180,-55,-90], ccrs.PlateCarree())
-
-    imf=ax.contourf(lon, lat, factor*data_model_mean[exp_name][3], cmap=new_cmap, 
-                     levels=levels, extend=extend,
-                     transform = ccrs.PlateCarree(),zorder=1)
-    lines=ax.contour(lon, lat, factor*data_model_mean[exp_name][3], 
-                     levels=levels, colors='black', linewidths=0.2,
-                     transform = ccrs.PlateCarree(),zorder=1)
-
-    ax.set_ylabel('K')
-    if variable == 'a_ice':
-        ax.set_title("Sea ice concentration",fontweight="bold")
-        cb = plt.colorbar(imf, orientation='horizontal',ticks=levels, fraction=0.046, pad=0.04)
-        cb.set_label(label="Concentration [%]", size='12')
-        cb.ax.tick_params(labelsize='11')
-        #cb.ax.set_xticklabels(levels, rotation=90)
-    else:
-        ax.set_title("Mixed layer depth "+ variable,fontweight="bold")
-        cb = plt.colorbar(imf, orientation='horizontal',ticks=levels, fraction=0.046, pad=0.04)
-        cb.set_label(label="Depth [km]", size='12')
-        cb.ax.tick_params(labelsize='11')
-        #cb.ax.set_xticklabels(levels, rotation=90)
-
-
-    ax.add_feature(cfeature.NaturalEarthFeature('physical', 'land', '110m', edgecolor='face', facecolor='lightgrey'))
-
-    ax.add_patch(mpatches.Rectangle(xy=[-40, -72], width=10, height=5,
-                                    edgecolor='red',
-                                    facecolor='none',
-                                    linewidth=1.5,
-                                    alpha=1,
-                                    transform=ccrs.Geodetic())
-                 )
-
-    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=False,
-                  linewidth=1, color='gray', alpha=0.2, linestyle='-')
-    gl.xlabels_bottom = False
-
-
-
-    #for label in cb.ax.xaxis.get_ticklabels()[::2]:
-    #    label.set_visible(False)
-    plt.tight_layout() 
-
-
-    ofile=variable+'_SH'
-
-    if ofile is not None:
-        plt.savefig(out_path+ofile, dpi=dpi,bbox_inches='tight')
-        os.system(f'convert {ofile} -trim {ofile}_trimmed.png')
-        os.system(f'mv {ofile}_trimmed.png {ofile}')
-
-
-    data_model_mean = OrderedDict()
-    figsize=(6,6)
-
-    if variable == 'a_ice':
-        levels = np.linspace(0,100,11).astype(int)
-        levels = [1,10,20,30,40,50,60,70,80,90,100]
-        factor=100
-        new_cmap = truncate_colormap(cmo.cm.ice, 0.15, 1)
-        extend='min'
-
-    else:
-        levels = [0, 0.2, 0.5,  1,  2, 2.5,  3, 3.5, 4]
-        factor=-0.001
-        new_cmap = truncate_colormap(plt.cm.PuOr, 0.5, 1)
-        extend='both'
-
-
-
+    # Generate plots
     for exp_name in input_names:
-        data_model_mean[exp_name] = data[exp_name]
-        if len(np.shape(data_model_mean[exp_name])) > 2:
-            data_model_mean[exp_name] = np.nanmean(data_model_mean[exp_name],axis=0)
-
-    print(np.shape(data_model_mean[exp_name]))
-
-    lon = np.arange(0, 360, 1)
-    lat = np.arange(-90, 90, 1)
-    data_model_mean[exp_name], lon = add_cyclic_point(data_model_mean[exp_name], coord=lon)
-
-
-    nrows, ncol = define_rowscol(input_paths)
-    fig =plt.figure(figsize=(6,6))
-
-
-    ax=plt.axes(projection=ccrs.NorthPolarStereo())
-    ax.add_feature(cfeature.COASTLINE,zorder=3)
-    ax.set_extent([-180,180,50,90], ccrs.PlateCarree())
-
-    imf=ax.contourf(lon, lat, factor*data_model_mean[exp_name][3], cmap=new_cmap, 
-                     levels=levels, extend=extend,
-                     transform = ccrs.PlateCarree(),zorder=1)
-    lines=ax.contour(lon, lat, factor*data_model_mean[exp_name][3], 
-                     levels=levels, colors='black', linewidths=0.2,
-                     transform = ccrs.PlateCarree(),zorder=1)
+        if variable == 'a_ice':
+            levels = [1,10,20,30,40,50,60,70,80,90,100]
+            factor = 100
+            new_cmap = truncate_colormap(cmo.cm.ice, 0.15, 1)
+            extend = 'min'
+        else:
+            levels = [0, 0.2, 0.5,  1,  2, 2.5,  3, 3.5, 4]
+            factor = -0.001
+            new_cmap = truncate_colormap(plt.cm.PuOr, 0.5, 1)
+            extend = 'both'
+        
+        plot_data(variable, 'Southern Hemisphere', ccrs.SouthPolarStereo(), [-180, 180, -55, -90], f"{variable}_SH.png", levels, factor, new_cmap, extend)
+        plot_data(variable, 'Northern Hemisphere', ccrs.NorthPolarStereo(), [-180, 180, 50, 90], f"{variable}_NH.png", levels, factor, new_cmap, extend)
 
 
-    ax.set_ylabel('K')
-    if variable == 'a_ice':
-        ax.set_title("Sea ice concentration",fontweight="bold")
-        cb = plt.colorbar(imf, orientation='horizontal',ticks=levels, fraction=0.046, pad=0.04)
-        cb.set_label(label="Concentration [%]", size='12')
-        cb.ax.tick_params(labelsize='11')
-        #cb.ax.set_xticklabels(levels, rotation=90)
-    else:
-        ax.set_title("Mixed layer depth "+ variable,fontweight="bold")
-        cb = plt.colorbar(imf, orientation='horizontal',ticks=levels, fraction=0.046, pad=0.04)
-        cb.set_label(label="Depth [km]", size='12')
-        cb.ax.tick_params(labelsize='11')
-        #cb.ax.set_xticklabels(levels, rotation=90)
+# -------------------------------
+# Completion
+# -------------------------------
+update_status(SCRIPT_NAME, " Completed")
 
 
-    ax.add_feature(cfeature.NaturalEarthFeature('physical', 'land', '110m', edgecolor='face', facecolor='lightgrey'))
-
-
-    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=False,
-                  linewidth=1, color='gray', alpha=0.2, linestyle='-')
-    gl.xlabels_bottom = False
-
-
-
-    #for label in cb.ax.xaxis.get_ticklabels()[::2]:
-    #    label.set_visible(False)
-    plt.tight_layout() 
-
-
-    ofile=variable+'_NH'
-
-    if ofile is not None:
-        plt.savefig(out_path+ofile, dpi=dpi,bbox_inches='tight')
-        os.system(f'convert {ofile} -trim {ofile}_trimmed.png')
-        os.system(f'mv {ofile}_trimmed.png {ofile}')
