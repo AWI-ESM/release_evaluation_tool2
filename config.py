@@ -81,12 +81,14 @@ from bg_routines.colormap_c2c    import *
 
 #Name of model release
 model_version  = 'AWI-CM-v3.3'
+oasis_oifs_grid_name = 'A096'
 
 #Spinup
 spinup_path    = '/work/ab0246/a270092/runtime/awicm3-v3.3/SPIN/outdata/'
 spinup_name    = model_version+'_spinup'
 spinup_start   = 1350
 spinup_end     = 1849
+#spinup_end     = 1400
 
 #Preindustrial Control
 pi_ctrl_path   = '/work/ab0246/a270092/runtime/awicm3-v3.3/PI/outdata/'

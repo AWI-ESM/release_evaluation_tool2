@@ -29,7 +29,7 @@ Key Features:
 import os
 import subprocess
 from natsort import natsorted
-
+import shutil
 
 ############################
 # Slurm Configuration      #
@@ -67,23 +67,23 @@ SCRIPTS = {script: False for script in script_files}  # All disabled by default
 
 # Enable scripts manually here:
 SCRIPTS.update({
-    "part1_mesh_plot.py":           False,
-    "part2_rad_balance.py":         False,
-    "part3_hovm_temp.py":           False,  
+    "part1_mesh_plot.py":           True,
+    "part2_rad_balance.py":         True,
+    "part3_hovm_temp.py":           True,  
     "part4_cmpi.py":                False,
     "part5_sea_ice_thickness.py":   True,
-    "part6_ice_conc_timeseries.py": False,
-    "part7_mld.py":                 False,
-    "part8_t2m_vs_era5.py":         False,
-    "part9_rad_vs_ceres.py":        False,
-    "part10_clt_vs_modis.py":       False,
-    "part11_zonal_plots.py":        False,
-    "part12_qbo.py":                False,
-    "part13_fesom_bias_maps.py":    False,
-    "part14_fesom_salt.py":         False,
-    "part15_enso.py":               False,
-    "part16_clim_change.py":        False,
-    "part17_moc.py":                False,
+    "part6_ice_conc_timeseries.py": True,
+    "part7_mld.py":                 True,
+    "part8_t2m_vs_era5.py":         True,
+    "part9_rad_vs_ceres.py":        True,
+    "part10_clt_vs_modis.py":       True,
+    "part11_zonal_plots.py":        True,
+    "part12_qbo.py":                True,
+    "part13_fesom_bias_maps.py":    True,
+    "part14_fesom_salt.py":         True,
+    "part15_enso.py":               True,
+    "part16_clim_change.py":        True,
+    "part17_moc.py":                True,
 })
 
 # Submit jobs
@@ -103,6 +103,8 @@ for script, run in SCRIPTS.items():
         print(f"Submitting {script} as:")
         subprocess.run(["sbatch", job_script])
         print(f"___________________________")
+        destination = f"tmp/{job_script}"
+        shutil.move(job_script, destination)
     else:
         print(f"Skipped {script} (disabled)")
         print(f"___________________________")
