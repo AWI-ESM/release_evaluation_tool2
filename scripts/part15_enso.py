@@ -1,130 +1,48 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# # Paths and config
-
-# In[9]:
-
-
-#Name of model release
-model_version  = 'TCo319-HIST'
-
-#Spinup
-spinup_path    = '/scratch/awiiccp5/ctl1950d/outdata/'
-spinup_name    = model_version+'_spinup'
-spinup_start   = 1850
-spinup_end     = 2134
-
-#Preindustrial Control
-pi_ctrl_path   = '/scratch/awiiccp5/ctl1950d/outdata/'
-pi_ctrl_name   = model_version+'_pi-control'
-pi_ctrl_start  = 1850
-pi_ctrl_end    = 2134
-
-#Historic
-historic_path  = '/scratch/awiiccp5/hi1950d/outdata/'
-historic_name  = model_version+'_historic'
-historic_start = 1950
-historic_end   = 2014
-
-
-# In[2]:
-
-
-#Misc
-reanalysis             = 'ERA5'
-remap_resolution       = '360x180'
-dpi                    = 300
-historic_last25y_start = historic_end-24
-historic_last25y_end   = historic_end
-
-#Mesh
-mesh_name      = 'DART'
-meshpath       = '/proj/awi/input/fesom2/dart/'
-mesh_file      = 'dart_griddes_nodes.nc'
-griddes_file   = 'dart_griddes_nodes.nc'
-abg            = [0, 0, 0]
-reference_path = '/proj/awiiccp5/climatologies/'
-reference_name = 'clim'
-reference_years= 1990
-
-observation_path = '/proj/awi/'
-
-
-# # Import libraries
-
-# In[3]:
-
-
-#Data access and structures
-import pyfesom2 as pf
-import xarray as xr
-from cdo import *   # python version
-cdo = Cdo(cdo='/home/awiiccp2/miniconda3/envs/pyfesom2/bin/cdo')
-from netCDF4 import Dataset
-import numpy as np
-import pandas as pd
-from collections import OrderedDict
-import csv
-
-#Plotting
-import math as ma
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import matplotlib.colors as colors
-from matplotlib.ticker import (MultipleLocator, FormatStrFormatter,
-                               AutoMinorLocator)
-from matplotlib.ticker import Locator
-from matplotlib import ticker
-from matplotlib import cm
-import seaborn as sns
-from cartopy import config
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from cartopy.util import add_cyclic_point
-from mpl_toolkits.basemap import Basemap
-import cmocean as cmo
-from cmocean import cm as cmof
-import matplotlib.pylab as pylab
-import matplotlib.patches as Polygon
-import matplotlib.ticker as mticker
-
-
-#Science
-import math
-from math import sqrt
-from sklearn.metrics import mean_squared_error
-from eofs.standard import Eof
-from eofs.examples import example_data_path
-import shapely
-from scipy import signal
-from scipy.stats import linregress
-from scipy.spatial import cKDTree
-from scipy.interpolate import CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator
-
-#Misc
+# Add the parent directory to sys.path and load config
+import sys
 import os
-import warnings
-from tqdm import tqdm
-import logging
-import joblib
-import dask
-from dask.delayed import delayed
-from dask.diagnostics import ProgressBar
-import random as rd
-import time
-import copy as cp
+sys.path.append(os.path.abspath(".."))  # Adjust for Jupyter Notebook environment
+from config import *
 
-#Fesom related routines
-from set_inputarray  import *
-from sub_fesom_mesh  import * 
-from sub_fesom_data  import * 
-from sub_fesom_moc   import *
-from colormap_c2c    import *
+SCRIPT_NAME = "Jupyter Notebook Execution"
 
-tool_path      = os.getcwd()
-out_path       = tool_path+'/output/plot/'+model_version+'/'
+# Mark as started
+update_status(SCRIPT_NAME, " Started")
+
+mesh = pf.load_mesh(meshpath)
+
+
+
+# interpolate data onto regular grid
+# select Nino index region
+box = 'Nino34'
+
+
+if box == 'Nino12':
+    lon_min=270 #(-90+360) 
+    lon_max=280 #(-80+360) 
+    lat_min=-10
+    lat_max= 0
+elif box == 'Nino3':
+    lon_min=210 #(-150+360)
+    lon_max=270 #(-90+360)
+    lat_min=-5
+    lat_max= 5
+elif box == 'Nino34':
+    lon_min=190 #(-170+360)
+    lon_max=240 #(-120+360)
+    lat_min=-5
+    lat_max= 5
+elif box == 'Nino4':
+    lon_min=160 
+    lon_max=210 #(-150+360)
+    lat_min=-5
+    lat_max= 5
+
+
+print(f"Box Coords: lon({lon_min} to {lon_max}), lat({lat_min} to {lat_max})")
+
+
 
 # parameters cell
 variable = 'sst'
@@ -239,100 +157,141 @@ if np.mean(eof1) < 0:
     
 title='EOF1 as correlation between PC1 time series and the input data'
     
-    
-fig =plt.figure(figsize=(9,5.56))
-colormap=plt.cm.PuOr_r
+# Debug: Creating figure
+print("Creating figure...")
+fig = plt.figure(figsize=(9, 5.56))
 
-# Plot the leading EOF in the Pacific domain.
-clevs = np.linspace(-1, 1, 21)
+# Debug: Checking colormap
+print("Checking colormap...")
+try:
+    colormap = plt.colormaps.get_cmap('PuOr_r')  # Updated for modern Matplotlib
+except AttributeError:
+    colormap = plt.cm.PuOr_r  # Fallback for older versions
+print(f"Colormap Loaded: {colormap}")
+
+# Debug: Ensure proper data types
+print(f"Shape of eof1_corr: {eof1_corr.shape}, Type: {type(eof1_corr)}")
+print(f"Shape of lon2: {lon2.shape}, Type: {type(lon2)}")
+print(f"Shape of lat2: {lat2.shape}, Type: {type(lat2)}")
+
+eof1_corr = np.nan_to_num(eof1_corr.astype(np.float64))  # Ensure proper numeric type
+
+# Debug: Checking coordinate ranges
+print(f"Longitude range: {lon2.min()} to {lon2.max()}")
+print(f"Latitude range: {lat2.min()} to {lat2.max()}")
+
+# Create projection
+print("Creating GeoAxes with PlateCarree projection...")
 ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=190))
+
+# Contour levels
+clevs = np.linspace(-1, 1, 21)
+print(f"Contour levels: {clevs}")
+
+# Debug: Creating filled contour plot
+print("Creating filled contour plot...")
+
+# Define mask for the region
+region_mask = (lon2 >= 190) & (lon2 <= 240) & (lat2 >= -5) & (lat2 <= 5)
+
+# Compute mean in the specified region
+region_mean = np.nanmean(eof1_corr.squeeze()[region_mask])
+
+# If mean is negative, flip the sign of the entire array
+if region_mean < 0:
+    eof1_corr = -eof1_corr
+
 fill = ax.contourf(lon2, lat2, eof1_corr.squeeze(), clevs,
-                   transform=ccrs.PlateCarree(), cmap=colormap,zorder=-1)
-line_colors = ['black' for l in fill.levels]
+                   transform=ccrs.PlateCarree(), cmap=colormap, zorder=-1)
+print(f"Fill contour levels: {fill.levels}")
+
+# Debug: Creating contour lines
+line_colors = ['black' for _ in fill.levels]
+print(f"Line contour colors: {line_colors}")
+print("Creating line contour plot...")
 con = ax.contour(lon2, lat2, eof1_corr.squeeze(), clevs, colors=line_colors, linewidths=0.3,
-                   transform=ccrs.PlateCarree(),zorder=-1)
+                 transform=ccrs.PlateCarree(), zorder=-1)
+
+# Adding features
+print("Adding land and coastline features...")
 ax.add_feature(cfeature.LAND, color='lightgrey')
 ax.add_feature(cfeature.COASTLINE)
 
 
-box = 'Nino34'
-lon_min=190 #(-170+360)
-lon_max=240 #(-120+360)
-lat_min=-5
-lat_max= 5
-
-plt.title('Box: '+box, fontsize=13,fontweight="bold")
-plt.text(lon_min-202,lat_min-2,str(lon_min)+'/'+str(lat_min)+'°')
-plt.text(lon_min-202,lat_max-2,str(lon_min)+'/'+str(lat_max)+'°')
-plt.text(lon_max-189,lat_max-2,str(lon_max)+'/'+str(lat_max)+'°')
-plt.text(lon_max-189,lat_min-2,str(lon_max)+'/'+str(lat_min)+'°')
-
-
+# Add bounding box
 ax.add_patch(mpatches.Rectangle(xy=[lon_min, lat_min], width=lon_max-lon_min, height=lat_max-lat_min,
-                                    facecolor='none',
-                                    #alpha=0.5,
-                                    edgecolor='Black',
-                                    lw='2',
-                                    transform=ccrs.PlateCarree(),
-                                    zorder=6)
-            )
+                                facecolor='none', edgecolor='Black', lw=2,
+                                transform=ccrs.PlateCarree(), zorder=6))
 
-textstr='Nino34 box'
-props = dict(boxstyle='round,pad=0.1', facecolor='white', alpha=0.7)
+# Debug: Text annotations
+print("Adding text annotations for box corners...")
+plt.text(lon_min-202, lat_min-2, f"{lon_min}/{lat_min}°")
+plt.text(lon_min-202, lat_max-2, f"{lon_min}/{lat_max}°")
+plt.text(lon_max-189, lat_max-2, f"{lon_max}/{lat_max}°")
+plt.text(lon_max-189, lat_min-2, f"{lon_max}/{lat_min}°")
 
-ax.text(0.506, 0.65, textstr, transform=ax.transAxes, fontsize=13,
-        verticalalignment='top', bbox=props, zorder=4)
-
-cbar_ax_abs = fig.add_axes([0.15, 0.1, 0.7, 0.05])
-cbar_ax_abs.tick_params(labelsize=12)
-
-ax.set_title(title,fontweight="bold")
-
+# Debug: Adding gridlines
+print("Adding gridlines...")
 gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
-              linewidth=1, color='gray', alpha=0.2, linestyle='-')
+                  linewidth=1, color='gray', alpha=0.2, linestyle='-')
 gl.xlabels_bottom = False
 
+# Colorbar setup
+print("Creating colorbar...")
+cbar_ax_abs = fig.add_axes([0.15, 0.1, 0.7, 0.05])
 cb = fig.colorbar(fill, cax=cbar_ax_abs, orientation='horizontal')
-#cb.set_label(label=unit, size='14')
-cb.ax.tick_params(labelsize='12')
+cb.ax.tick_params(labelsize=12)
 cb.set_label('Correlation coefficient', fontsize=12)
 
-ofile='HIST'
+# Fixing title type
+title = str("EOF1 as correlation between PC1 time series and the input data")  # Ensure it's a string
+print(f"Setting figure title: {title}")
+ax.set_title(title, fontweight="bold")
 
-print(ofile)
-if ofile is not None:
+# Debug: Save figure
+ofile = 'HIST'
+print(f"Output filename: {ofile}")
+
+if ofile:
     ofile_long = f"{ofile}_enso_eof_corr.png"
-    plt.savefig(f"{out_path+ofile_long}", dpi=300)
-    os.system(f'convert {ofile_long} -trim {ofile_long}_trimmed.png')
-    os.system(f'mv {ofile_long}_trimmed.png {ofile_long}')
+    total_path = os.path.join(out_path, ofile_long)
 
+    # Ensure output directory exists
+    if not os.path.exists(out_path):
+        print(f"Creating output directory: {out_path}")
+        os.makedirs(out_path)
 
-    
-# interpolate data onto regular grid
-# select Nino index region
-box = 'Nino34'
+    print(f"Saving figure to: {total_path}")
 
+    try:
+        # Ensure valid metadata
+        fig.canvas.manager.set_window_title("EOF Plot")  # Avoid non-numeric titles
 
-if box == 'Nino12':
-    lon_min=270 #(-90+360) 
-    lon_max=280 #(-80+360) 
-    lat_min=-10
-    lat_max= 0
-elif box == 'Nino3':
-    lon_min=210 #(-150+360)
-    lon_max=270 #(-90+360)
-    lat_min=-5
-    lat_max= 5
-elif box == 'Nino34':
-    lon_min=190 #(-170+360)
-    lon_max=240 #(-120+360)
-    lat_min=-5
-    lat_max= 5
-elif box == 'Nino4':
-    lon_min=160 
-    lon_max=210 #(-150+360)
-    lat_min=-5
-    lat_max= 5
+        # Check the figure before saving
+        print(f"Figures open: {plt.get_fignums()}")
+        print(f"Active figure type: {type(fig)}")
+        print(f"Axes in figure: {fig.axes}")
+
+        # Check if all axes have numeric data
+        for ax in fig.axes:
+            print(f"Checking axis: {ax}")
+            print(f"Title: {ax.get_title()}, Type: {type(ax.get_title())}")
+            print(f"X-label: {ax.get_xlabel()}, Type: {type(ax.get_xlabel())}")
+            print(f"Y-label: {ax.get_ylabel()}, Type: {type(ax.get_ylabel())}")
+
+            for label in ax.get_xticklabels() + ax.get_yticklabels():
+                print(f"Tick label: '{label.get_text()}', Type: {type(label.get_text())}")
+
+            for text in ax.texts:
+                print(f"Text: '{text.get_text()}', Type: {type(text.get_text())}")
+
+        plt.savefig(total_path, dpi=300)
+        print("Figure saved successfully!")
+
+    except Exception as e:
+        print(f"Error saving figure: {e}")
+
+plt.show()
 
     
     
@@ -432,8 +391,7 @@ plt.fill_between(months, sst_nino_ano_smooth, -1, where = (sst_nino_ano_smooth <
 if ofile is not None:
     ofile_long = f"{ofile}_"+box+"_enso_box_index.png"
     plt.savefig(f"{out_path+ofile_long}", dpi=dpi,bbox_inches='tight')
-    os.system(f'convert {ofile_long} -trim {ofile_long}_trimmed.png')
-    os.system(f'mv {ofile_long}_trimmed.png {ofile_long}')
+
     
     
 # Plot the leading PC time series.
@@ -461,9 +419,7 @@ plt.fill_between(months, obs_nino_ano_smooth, -1, where = (obs_nino_ano_smooth <
 if ofile is not None:
     ofile_long = f"HadISST_"+box+"_enso_box_index.png"
     plt.savefig(f"{out_path+ofile_long}", dpi=dpi,bbox_inches='tight')
-    os.system(f'convert {ofile_long} -trim {ofile_long}_trimmed.png')
-    os.system(f'mv {ofile_long}_trimmed.png {ofile_long}')
-    
+
     
     
 # Obtain data
@@ -498,8 +454,6 @@ ax.tick_params(labelsize=13)
 if ofile is not None:
     ofile_long = f"{ofile}_"+box+"_enso_temperature_distribution.png"
     plt.savefig(f"{out_path+ofile_long}", dpi=dpi,bbox_inches='tight')
-    os.system(f'convert {ofile_long} -trim {ofile_long}_trimmed.png')
-    os.system(f'mv {ofile_long}_trimmed.png {ofile_long}')
     
     
     
@@ -533,8 +487,7 @@ plt.xlabel("Temperature anomaly [°C]",fontsize=13)
 if ofile is not None:
     ofile_long = f"HadISST_"+box+"_enso_temperature_distribution.png"
     plt.savefig(f"{out_path+ofile_long}", dpi=dpi,bbox_inches='tight')
-    os.system(f'convert {ofile_long} -trim {ofile_long}_trimmed.png')
-    os.system(f'mv {ofile_long}_trimmed.png {ofile_long}')
+
     
     
 
@@ -594,7 +547,4 @@ secax.tick_params(axis='x', which='minor', labelsize=11)
 
 if ofile is not None:
     ofile_long = f"{ofile}_enso_"+box+"_box_norm_psd.png"
-    plt.savefig(f"{out_path+ofile_long}", dpi=dpi,bbox_inches='tight')
-    os.system(f'convert {ofile_long} -trim {ofile_long}_trimmed.png')
-    os.system(f'mv {ofile_long}_trimmed.png {ofile_long}')
-
+    plt.savefig(f"{out_path+ofile_long}", dpi=300,bbox_inches='tight')
