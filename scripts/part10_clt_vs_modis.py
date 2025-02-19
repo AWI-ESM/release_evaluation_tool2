@@ -11,6 +11,50 @@ print(SCRIPT_NAME)
 # Mark as started
 update_status(SCRIPT_NAME, " Started")
 # Load MODIS climatology data
+
+# parameters cell
+input_paths = [historic_path]
+input_names = [historic_name]
+exps = list(range(historic_last25y_start, historic_last25y_end+1))
+
+
+climatology_files = ['clt_MODIS_yearmean.nc']
+climatology_path =  observation_path+'/MODIS/'
+
+figsize=(6, 4.5)
+dpi = 300
+ofile = None
+res = [180, 91]
+variable = ['tcc']
+variable_clim = 'clt'
+title='Cloud area fraction vs. MODIS'
+mapticks = [-50,-30,-20,-10,-6,-2,2,6,10,20,30,50]
+
+contour_outline_thickness = 0
+levels = np.linspace(-5, 5, 21)
+
+def define_rowscol(input_paths, columns=len(input_paths), reduce=0):
+    number_paths = len(input_paths) - reduce
+#     columns = columns
+    if number_paths < columns:
+        ncol = number_paths
+    else:
+        ncol = columns
+    nrows = math.ceil(number_paths / columns)
+    return [nrows, ncol]
+
+# Calculate Root Mean Square Deviation (RMSD)
+def rmsd(predictions, targets):
+    return np.sqrt(((predictions - targets) ** 2).mean())
+
+# Mean Deviation weighted
+def md(predictions, targets, wgts):
+    output_errors = np.average((predictions - targets), axis=0, weights=wgts)
+    return (output_errors).mean()
+
+# Load CERES satobs data (https://doi.org/10.1175/JCLI-D-17-0208.1)
+
+
 CERES_path = climatology_path + climatology_files[0]
 CERES_Dataset = Dataset(CERES_path)
 CERES_Data = OrderedDict()

@@ -139,7 +139,7 @@ class fesom_mesh:
         
         #____load 2d node matrix________________________________________________
         print('     > nod2d.out',end='')
-        file_content    = pa.read_csv(self.path+'nod2d.out', delim_whitespace=True, skiprows=1, \
+        file_content    = pa.read_csv(self.path+'nod2d.out', sep='\s+', skiprows=1, \
                                       names=['node_number','x','y','flag'] )
         self.nodes_2d_x = file_content.x.values.astype('float32')
         self.nodes_2d_y = file_content.y.values.astype('float32')
@@ -149,7 +149,7 @@ class fesom_mesh:
         
         #____load 2d element matrix_____________________________________________
         print('     > elem2d.out',end='')
-        file_content    = pa.read_csv(self.path+'elem2d.out', delim_whitespace=True, skiprows=1, \
+        file_content    = pa.read_csv(self.path+'elem2d.out', sep='\s+', skiprows=1, \
                                        names=['1st_node_in_elem','2nd_node_in_elem','3rd_node_in_elem'])
         self.elem0_2d_i = file_content.values.astype('uint32') - 1
         self.n2de       = np.shape(self.elem0_2d_i)[0]
@@ -164,7 +164,7 @@ class fesom_mesh:
         
         #____load number of levels at each node_________________________________
         print('     > nlvls.out') 
-        file_content    = pa.read_csv(self.path+'nlvls.out', delim_whitespace=True, skiprows=0, \
+        file_content    = pa.read_csv(self.path+'nlvls.out', sep='\s+', skiprows=0, \
                                        names=['numb_of_lev'])
         self.nodes_2d_iz= file_content.values.astype('uint16') - 1
         self.nodes_2d_iz= self.nodes_2d_iz.squeeze()
@@ -172,7 +172,7 @@ class fesom_mesh:
         
         #____load number of levels at each elem_________________________________
         print('     > elvls.out') 
-        file_content    = pa.read_csv(self.path+'elvls.out', delim_whitespace=True, skiprows=0, \
+        file_content    = pa.read_csv(self.path+'elvls.out', sep='\s+', skiprows=0, \
                                        names=['numb_of_lev'])
         self.elem0_2d_iz= file_content.values.astype('uint16') - 1
         self.elem0_2d_iz= self.elem0_2d_iz.squeeze()

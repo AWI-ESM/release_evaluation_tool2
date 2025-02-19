@@ -19,9 +19,9 @@ def set_inputarray():
 	inputarray['mesh_id'],inputarray['mesh_dir'] = 'COREv2','/work/ollie/pscholz/mesh_fesom2.0/core2_meanz/'
 	
 	# Euler-Angle:for poles at (phi,theta)=(-40,75)
-	inputarray['mesh_alpha'	 	 ] = np.float( 50.0)
-	inputarray['mesh_beta'		 ] = np.float( 15.0)
-	inputarray['mesh_gamma'	 	 ] = np.float(-90.0)
+	inputarray['mesh_alpha'	 	 ] = float( 50.0)
+	inputarray['mesh_beta'		 ] = float( 15.0)
+	inputarray['mesh_gamma'	 	 ] = float(-90.0)
 	inputarray['mesh_rotate'	 ] = False
 	inputarray['mesh_remove_cyc' ] = True
 	

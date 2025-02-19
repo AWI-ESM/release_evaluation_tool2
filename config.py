@@ -10,7 +10,7 @@ from tqdm import tqdm
 import logging
 import joblib
 import dask
-from dask.delayed import delayed
+from dask import delayed, compute
 from dask.diagnostics import ProgressBar
 import random as rd
 import time
@@ -88,7 +88,6 @@ spinup_path    = '/work/ab0246/a270092/runtime/awicm3-v3.3/SPIN/outdata/'
 spinup_name    = model_version+'_spinup'
 spinup_start   = 1350
 spinup_end     = 1849
-#spinup_end     = 1400
 
 #Preindustrial Control
 pi_ctrl_path   = '/work/ab0246/a270092/runtime/awicm3-v3.3/PI/outdata/'

@@ -1,15 +1,15 @@
 # Add the parent directory to sys.path and load config
 import sys
 import os
-sys.path.append(os.path.abspath(".."))  # Adjust for Jupyter Notebook environment
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from config import *
 
-SCRIPT_NAME = "Jupyter Notebook Execution"
+SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
+
+print(SCRIPT_NAME)
 
 # Mark as started
 update_status(SCRIPT_NAME, " Started")
-
-mesh = pf.load_mesh(meshpath)
 
 
 
@@ -46,8 +46,8 @@ print(f"Box Coords: lon({lon_min} to {lon_max}), lat({lat_min} to {lat_max})")
 
 # parameters cell
 variable = 'sst'
-input_paths = [spinup_path+'/fesom/']
-years = range(spinup_start, spinup_end+1)
+input_paths = [historic_path+'/fesom/']
+years = range(historic_start, historic_end+1)
 figsize=(10, 5)
 
 
@@ -548,3 +548,6 @@ secax.tick_params(axis='x', which='minor', labelsize=11)
 if ofile is not None:
     ofile_long = f"{ofile}_enso_"+box+"_box_norm_psd.png"
     plt.savefig(f"{out_path+ofile_long}", dpi=300,bbox_inches='tight')
+
+# Mark script as completed
+update_status(SCRIPT_NAME, "Completed")
