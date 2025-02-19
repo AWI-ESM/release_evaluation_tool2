@@ -1,130 +1,16 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# # Paths and config
-
-# In[9]:
-
-
-#Name of model release
-model_version  = 'TCo319-HIST'
-
-#Spinup
-spinup_path    = '/scratch/awiiccp5/ctl1950d/outdata/'
-spinup_name    = model_version+'_spinup'
-spinup_start   = 1850
-spinup_end     = 2134
-
-#Preindustrial Control
-pi_ctrl_path   = '/scratch/awiiccp5/ctl1950d/outdata/'
-pi_ctrl_name   = model_version+'_pi-control'
-pi_ctrl_start  = 1850
-pi_ctrl_end    = 2134
-
-#Historic
-historic_path  = '/scratch/awiiccp5/hi1950d/outdata/'
-historic_name  = model_version+'_historic'
-historic_start = 1950
-historic_end   = 2014
-
-
-# In[2]:
-
-
-#Misc
-reanalysis             = 'ERA5'
-remap_resolution       = '360x180'
-dpi                    = 300
-historic_last25y_start = historic_end-24
-historic_last25y_end   = historic_end
-
-#Mesh
-mesh_name      = 'DART'
-meshpath       = '/proj/awi/input/fesom2/dart/'
-mesh_file      = 'dart_griddes_nodes.nc'
-griddes_file   = 'dart_griddes_nodes.nc'
-abg            = [0, 0, 0]
-reference_path = '/proj/awiiccp5/climatologies/'
-reference_name = 'clim'
-reference_years= 1990
-
-observation_path = '/proj/awi/'
-
-
-# # Import libraries
-
-# In[3]:
-
-
-#Data access and structures
-import pyfesom2 as pf
-import xarray as xr
-from cdo import *   # python version
-cdo = Cdo(cdo='/home/awiiccp2/miniconda3/envs/pyfesom2/bin/cdo')
-from netCDF4 import Dataset
-import numpy as np
-import pandas as pd
-from collections import OrderedDict
-import csv
-
-#Plotting
-import math as ma
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import matplotlib.colors as colors
-from matplotlib.ticker import (MultipleLocator, FormatStrFormatter,
-                               AutoMinorLocator)
-from matplotlib.ticker import Locator
-from matplotlib import ticker
-from matplotlib import cm
-import seaborn as sns
-from cartopy import config
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from cartopy.util import add_cyclic_point
-from mpl_toolkits.basemap import Basemap
-import cmocean as cmo
-from cmocean import cm as cmof
-import matplotlib.pylab as pylab
-import matplotlib.patches as Polygon
-import matplotlib.ticker as mticker
-
-
-#Science
-import math
-from math import sqrt
-from sklearn.metrics import mean_squared_error
-from eofs.standard import Eof
-from eofs.examples import example_data_path
-import shapely
-from scipy import signal
-from scipy.stats import linregress
-from scipy.spatial import cKDTree
-from scipy.interpolate import CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator
-
-#Misc
+# Add the parent directory to sys.path and load config
+import sys
 import os
-import warnings
-from tqdm import tqdm
-import logging
-import joblib
-import dask
-from dask.delayed import delayed
-from dask.diagnostics import ProgressBar
-import random as rd
-import time
-import copy as cp
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from config import *
 
-#Fesom related routines
-from set_inputarray  import *
-from sub_fesom_mesh  import * 
-from sub_fesom_data  import * 
-from sub_fesom_moc   import *
-from colormap_c2c    import *
+SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
-tool_path      = os.getcwd()
-out_path       = tool_path+'/output/plot/'+model_version+'/'
+print(SCRIPT_NAME)
+
+# Mark as started
+update_status(SCRIPT_NAME, " Started")
+
 
 # parameters cell
 input_paths = [historic_path]
@@ -169,20 +55,28 @@ data = OrderedDict()
 v=var
 paths = []
 data[v] = []
-for exp_path, exp_name  in zip(input_paths, input_names):
 
-    datat = []
-    t = []
-    temporary = []
-    for exp in tqdm(exps):
+batch_size = 20
 
-        path = exp_path+'/oifs/atm_remapped_1m_'+v+'_1m_'+f'{exp:04d}-{exp:04d}.nc'
-        temporary = dask.delayed(load_parallel)(var,path)
-        t.append(temporary)
+for exp_path, exp_name in zip(input_paths, input_names):
 
-    with ProgressBar():
-        datat = dask.compute(t)
-    data[v] = np.squeeze(datat)
+    data_batches = []
+    for i in range(0, len(exps), batch_size):
+        datat = []
+        t = []
+
+        batch = exps[i:i+batch_size]  # Process in chunks of 20
+        for exp in tqdm(batch):
+            path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
+            temporary = dask.delayed(load_parallel)(var, path)
+            t.append(temporary)
+
+        with ProgressBar():
+            datat = dask.compute(*t, scheduler='threads')
+
+        data_batches.extend(datat)  # Collect results
+
+    data[v] = np.squeeze(data_batches)
     
     
 ctrl_data = OrderedDict()
@@ -191,18 +85,23 @@ paths = []
 ctrl_data[v] = []
 for exp_path, exp_name  in zip(ctrl_input_paths, ctrl_input_names):
 
-    datat = []
-    t = []
-    temporary = []
-    for exp in tqdm(exps):
+    data_batches = []
+    for i in range(0, len(exps), batch_size):
+        datat = []
+        t = []
 
-        path = exp_path+'/oifs/atm_remapped_1m_'+v+'_1m_'+f'{exp:04d}-{exp:04d}.nc'
-        temporary = dask.delayed(load_parallel)(var,path)
-        t.append(temporary)
+        batch = exps[i:i+batch_size]  # Process in chunks of 20
+        for exp in tqdm(batch):
+            path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
+            temporary = dask.delayed(load_parallel)(var, path)
+            t.append(temporary)
 
-    with ProgressBar():
-        datat = dask.compute(t)
-    ctrl_data[v] = np.squeeze(datat)
+        with ProgressBar():
+            datat = dask.compute(*t, scheduler='threads')
+
+        data_batches.extend(datat)  # Collect results
+
+    ctrl_data[v] = np.squeeze(data_batches)
     
     
 # extract data
@@ -267,7 +166,7 @@ plt.ylabel('Change in near surface (2m) air temperature $\Delta$T [C°]')
 plt.xlabel('Year')
 
 ax.legend([input_names[0], ctrl_input_names[0]])
-plt.savefig(out_path+'T2M_hist-pict.png', dpi=dpi)
+plt.savefig(out_path+'T2M_hist-pict.png', dpi=dpi,bbox_inches='tight')
 
 
 
@@ -297,7 +196,7 @@ plt.ylabel('Change in near surface (2m) air temperature $\Delta$T [C°]')
 plt.xlabel('Year')
 
 ax.legend([ climatology_names[0] ,ctrl_input_names[0],input_names[0]])
-plt.savefig(out_path+'T2M_hist-pict_corrected.png', dpi=dpi)
+plt.savefig(out_path+'T2M_hist-pict_corrected.png', dpi=dpi,bbox_inches='tight')
 
 # parameters cell
 input_paths = [historic_path]
@@ -416,7 +315,7 @@ for var in ['precip','temp']:
                 t.append(temporary)
 
             with ProgressBar():
-                datat = dask.compute(t)
+                datat = dask.compute(*t, scheduler='threads')
             data[exp_name][v] = np.squeeze(datat)
 
     paths = []
@@ -433,7 +332,7 @@ for var in ['precip','temp']:
                 t.append(temporary)
 
             with ProgressBar():
-                datat = dask.compute(t)
+                datat = dask.compute(*t, scheduler='threads')
             data_ctrl[exp_name][v] = np.squeeze(datat)
             
 def resample(xyobs,n,m):
@@ -457,13 +356,13 @@ def bootstrap(xyobs, data1, data2):
     pvalue = []
     n = xyobs.shape[0]//2
     m = xyobs.shape[0]//2
-    B = 20000
+    B = 500
 
     for bi in tqdm(range(B)):
         t = dask.delayed(resample)(xyobs,n,m)
         ta.append(t)
     with ProgressBar():
-        tstar = dask.compute(ta)
+        tstar = dask.compute(ta, scheduler='threads')
     tstar = np.squeeze(np.asarray(tstar), axis = 0)
     pvalue = np.empty((tstarobs.shape[0],tstarobs.shape[1]))
     for lat in tqdm(range(0,tstarobs.shape[0])):
@@ -472,6 +371,7 @@ def bootstrap(xyobs, data1, data2):
             p2 = tstar[:,lat,lon][tstar[:,lat,lon] >= -tstarobs[lat,lon]].shape[0]/B
             pvalue[lat,lon] = min(p1,p2)
     return pvalue
+
 
 
 for var in ['precip','temp']:
@@ -547,220 +447,68 @@ for var in ['precip','temp']:
 
 
     nrows, ncol = 1, 1
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize)
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize, subplot_kw={'projection': ccrs.PlateCarree()})
     if isinstance(axes, np.ndarray):
         axes = axes.flatten()
     else:
         axes = [axes]
     i = 0
 
-    axes[i]=plt.subplot(nrows,ncol,i+1,projection=ccrs.PlateCarree())
-    axes[i].add_feature(cfeature.COASTLINE,zorder=3)
+    axes[i].add_feature(cfeature.COASTLINE, zorder=3)
 
     if var == 'precip':
-        imf=plt.contourf(lon, lat, (data_model_mean[historic_name]-
+        imf=axes[i].contourf(lon, lat, (data_model_mean[historic_name]-
                          data_model_mean[pi_ctrl_name])/data_model_mean[pi_ctrl_name]*100, cmap=colormap, 
                          levels=levels2, extend='both',
                          transform=ccrs.PlateCarree(),zorder=1)
     else: 
-        imf=plt.contourf(lon, lat, data_model_mean[historic_name]-
+        imf=axes[i].contourf(lon, lat, data_model_mean[historic_name]-
                          data_model_mean[pi_ctrl_name], cmap=colormap, 
                          levels=levels, extend='both',
                          transform=ccrs.PlateCarree(),zorder=1)
 
-    plt.rcParams['hatch.linewidth']=0.15
-    cs = plt.contourf(lon, lat, data_sig, 3 , hatches=['\\\\\\', ''],  alpha=0)
+    plt.rcParams['hatch.linewidth'] = 0.15
+    cs = axes[i].contourf(lon, lat, data_sig, 3, hatches=['\\\\\\', ''], alpha=0)
 
+    axes[i].set_title(title, fontweight="bold")
 
-    axes[i].set_xlabel('Simulation Year')
-    axes[i].set_title(title,fontweight="bold")
-    plt.tight_layout() 
-    gl = axes[i].gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
-                  linewidth=1, color='gray', alpha=0.2, linestyle='-')
+    # Hide the borders and tick labels
+    axes[i].set_xticks([])
+    axes[i].set_yticks([])
+
+    gl = axes[i].gridlines(draw_labels=True,
+                           linewidth=1, color='gray', alpha=0.2, linestyle='-')
     gl.xlabels_bottom = False
+    gl.bottom_labels = False
 
     if var == 'temp':
-        plt.axhline(y=65, color='black', linestyle='-',alpha=.4)
+        plt.axhline(y=65, color='black', linestyle='-', alpha=.4)
 
         # Calculate AAI
-        arctic_mean_pict=np.mean(data_model_mean[pi_ctrl_name][310:,:])
-        arctic_mean_hist=np.mean(data_model_mean[historic_name][310:,:])
-        glob_mean_pict=np.mean(data_model_mean[pi_ctrl_name][180,:])
-        glob_mean_hist=np.mean(data_model_mean[historic_name][180,:])
-        Arctic_Amplification_Index = (arctic_mean_hist-arctic_mean_pict)/(glob_mean_hist-glob_mean_pict)
-        print("AAI:",Arctic_Amplification_Index)
-        #plt.text(185, 90, 'AAI:')
-        #plt.text(185, 70, str(round(Arctic_Amplification_Index,2)))
+        arctic_mean_pict = np.mean(data_model_mean[pi_ctrl_name][310:, :])
+        arctic_mean_hist = np.mean(data_model_mean[historic_name][310:, :])
+        glob_mean_pict = np.mean(data_model_mean[pi_ctrl_name][180, :])
+        glob_mean_hist = np.mean(data_model_mean[historic_name][180, :])
+        Arctic_Amplification_Index = (arctic_mean_hist - arctic_mean_pict) / (glob_mean_hist - glob_mean_pict)
+        print("AAI:", Arctic_Amplification_Index)
         props = dict(boxstyle='round,pad=0.1', facecolor='white', alpha=0.7)
-        textstr='AAI:'+str(round(Arctic_Amplification_Index,2))
-        axes[i].text(0.86, 0.98, textstr, transform=axes[i].transAxes, fontsize=13,
-            verticalalignment='top', bbox=props, zorder=4)
+        textstr = 'AAI:' + str(round(Arctic_Amplification_Index, 2))
+        axes[i].text(0.86, 0.98, textstr, transform=axes[i].transAxes, fontsize=10,
+                     verticalalignment='top', bbox=props, zorder=4)
 
-
-    cbar_ax_abs = fig.add_axes([0.15, 0.11, 0.7, 0.05])
-    cbar_ax_abs.tick_params(labelsize=12)
-    cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal',ticks=levels)
-    cb.set_label(label=unit, size='14')
-    cb.ax.tick_params(labelsize='12')
-    #plt.text(5, 168, r'rmsd='+str(round(rmsdval,3)))
-    #plt.text(-7.5, 168, r'bias='+str(round(mdval,3)))
-
-
-
-    #for label in cb.ax.xaxis.get_ticklabels()[::2]:
-    #    label.set_visible(False)
-
-    ofile=var+'_hist-pict.png'
-
-    print(ofile)
-    if ofile is not None:
-        plt.savefig(out_path+ofile, dpi=dpi,bbox_inches='tight')
-        os.system(f'convert {ofile} -trim {ofile}_trimmed.png')
-        os.system(f'mv {ofile}_trimmed.png {ofile}')
-
-for var in ['precip']:
-    if var == 'precip':
-        variables = ['lsp','cp']
-
-        levels = [-15,-10,-7,-4,-2,-1,1,2,4,7,10,15]
-        levels2 = [-30,-25,-20,-15,-10,-3,3,10,15,20,25,30]
-
-        title = 'Precipitation anomaly'
-        accumulation_factor=86400
-        colormap=plt.cm.PuOr
-        unit='mm/day'
-        data_plot = (data[historic_name]['lsp']+data[historic_name]['cp'])*accumulation_factor
-        data_ctrl_plot = (data_ctrl[pi_ctrl_name]['lsp']+data_ctrl[pi_ctrl_name]['cp'])*accumulation_factor
-
-    elif var == 'temp':
-        variables = ['2t']
-        levels = [-5.0,-3.0,-2.0,-1.0,-.6,-.2,.2,.6,1.0,2.0,3.0,5.0]
-        title = 'Near surface (2m) air temperature anomaly'
-        accumulation_factor=1
-        colormap=plt.cm.PuOr_r
-        unit='°C'
-        data_plot = data[historic_name]['2t']
-        data_ctrl_plot = data_ctrl[pi_ctrl_name]['2t']
-
-        
-    # Bootstrap significance test
-    xyobs = np.asarray(np.concatenate([np.squeeze(data_plot),np.squeeze(data_ctrl_plot)]))
-    mean_hist=np.mean(np.squeeze(data_plot),axis=0)
-    mean_pict=np.mean(np.squeeze(data_ctrl_plot),axis=0)
-
-    pvalue = bootstrap(xyobs, mean_hist, mean_pict)
-    data_sig = np.greater(pvalue, 0.025)
-
-    lon = np.arange(0, 360, 0.5)
-    lat = np.arange(-90, 90, 0.5)
-    data_sig, lon = add_cyclic_point(data_sig, coord=lon)
-    
-    
-    
-    
-    
-    data_model = OrderedDict()
-    data_model_mean = OrderedDict()
-    
-    for exp_name in [historic_name]:
-        data_model[exp_name] = np.squeeze(data_plot) 
-        data_model_mean[exp_name] = data_model[exp_name]
-        if len(np.shape(data_model_mean[exp_name])) > 2:
-            data_model_mean[exp_name] = np.mean(data_model_mean[exp_name],axis=0)
-
-    for exp_name in [pi_ctrl_name]:
-        data_model[exp_name] = np.squeeze(data_ctrl_plot) 
-        data_model_mean[exp_name] = data_model[exp_name]
-        if len(np.shape(data_model_mean[exp_name])) > 2:
-            data_model_mean[exp_name] = np.mean(data_model_mean[exp_name],axis=0)
-
-            
-            
-    print(np.shape(data_model_mean[exp_name]))
-
-    for exp_name in [historic_name, pi_ctrl_name]:
-        lon = np.arange(0, 360, 0.5)
-        lat = np.arange(-90, 90, 0.5)
-        data_model_mean[exp_name], lon = add_cyclic_point(data_model_mean[exp_name], coord=lon)
-
-    print(np.shape(data_model_mean[exp_name]))
-
-
-    #rmsdval = rmsd(data_model_mean[exp_name],data_reanalysis_mean)
-    #mdval = md(data_model_mean[exp_name],data_reanalysis_mean)
-
-
-    nrows, ncol = 1, 1
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize)
-    if isinstance(axes, np.ndarray):
-        axes = axes.flatten()
-    else:
-        axes = [axes]
-    i = 0
-
-    axes[i]=plt.subplot(nrows,ncol,i+1,projection=ccrs.PlateCarree())
-    axes[i].add_feature(cfeature.COASTLINE,zorder=3)
-
-    if var == 'precip':
-        imf=plt.contourf(lon, lat, (data_model_mean[historic_name]-
-                         data_model_mean[pi_ctrl_name])/data_model_mean[pi_ctrl_name]*100, cmap=colormap, 
-                         levels=levels2, extend='both',
-                         transform=ccrs.PlateCarree(),zorder=1)
-    else: 
-        imf=plt.contourf(lon, lat, data_model_mean[historic_name]-
-                         data_model_mean[pi_ctrl_name], cmap=colormap, 
-                         levels=levels, extend='both',
-                         transform=ccrs.PlateCarree(),zorder=1)
-
-    plt.rcParams['hatch.linewidth']=0.15
-    cs = plt.contourf(lon, lat, data_sig, 3 , hatches=['\\\\\\', ''],  alpha=0)
-
-
-    axes[i].set_xlabel('Simulation Year')
-    axes[i].set_title(title,fontweight="bold")
-    plt.tight_layout() 
-    gl = axes[i].gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
-                  linewidth=1, color='gray', alpha=0.2, linestyle='-')
-    gl.xlabels_bottom = False
-
-    if var == 'temp':
-        plt.axhline(y=65, color='black', linestyle='-',alpha=.4)
-
-        # Calculate AAI
-        arctic_mean_pict=np.mean(data_model_mean[pi_ctrl_name][310:,:])
-        arctic_mean_hist=np.mean(data_model_mean[historic_name][310:,:])
-        glob_mean_pict=np.mean(data_model_mean[pi_ctrl_name][180,:])
-        glob_mean_hist=np.mean(data_model_mean[historic_name][180,:])
-        Arctic_Amplification_Index = (arctic_mean_hist-arctic_mean_pict)/(glob_mean_hist-glob_mean_pict)
-        print("AAI:",Arctic_Amplification_Index)
-        #plt.text(185, 90, 'AAI:')
-        #plt.text(185, 70, str(round(Arctic_Amplification_Index,2)))
-        props = dict(boxstyle='round,pad=0.1', facecolor='white', alpha=0.7)
-        textstr='AAI:'+str(round(Arctic_Amplification_Index,2))
-        axes[i].text(0.86, 0.98, textstr, transform=axes[i].transAxes, fontsize=13,
-            verticalalignment='top', bbox=props, zorder=4)
-
-
-    cbar_ax_abs = fig.add_axes([0.15, 0.11, 0.7, 0.05])
+    cbar_ax_abs = fig.add_axes([0.15, 0.15, 0.7, 0.05])
     cbar_ax_abs.tick_params(labelsize=12)
     if var == 'precip':
-        cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal',ticks=levels2)
+        cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal', ticks=levels2)
     else:
-        cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal',ticks=levels)
+        cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal', ticks=levels)
     cb.set_label(label=unit, size='14')
     cb.ax.tick_params(labelsize='12')
-    #plt.text(5, 168, r'rmsd='+str(round(rmsdval,3)))
-    #plt.text(-7.5, 168, r'bias='+str(round(mdval,3)))
 
-
-
-    #for label in cb.ax.xaxis.get_ticklabels()[::2]:
-    #    label.set_visible(False)
-
-    ofile=var+'_hist-pict.png'
-
+    ofile = var + '_hist-pict.png'
     print(ofile)
     if ofile is not None:
-        plt.savefig(out_path+ofile, dpi=dpi,bbox_inches='tight')
-        os.system(f'convert {ofile} -trim {ofile}_trimmed.png')
-        os.system(f'mv {ofile}_trimmed.png {ofile}')
+        plt.savefig(out_path + ofile, dpi=dpi, transparent=True)
+
+# Mark as completed
+update_status(SCRIPT_NAME, " Completed")
