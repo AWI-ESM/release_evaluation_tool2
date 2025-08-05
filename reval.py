@@ -45,7 +45,7 @@ SBATCH_SETTINGS = """\
 #SBATCH --ntasks=128
 #SBATCH --ntasks-per-node=128
 #SBATCH --partition=compute
-#SBATCH -A bb1469
+#SBATCH -A ab0246
 """
 
 
@@ -69,14 +69,13 @@ SCRIPTS = {script: False for script in script_files}  # All disabled by default
 SCRIPTS.update({
     "part1_mesh_plot.py":           False,
     "part2_rad_balance.py":         False,
-    "part3_hovm_temp.py":           False,  
-    "part4_cmpi.py":                False,
+    "part3_hovm_temp.py":           False,
     "part5_sea_ice_thickness.py":   False,
     "part6_ice_conc_timeseries.py": False,
     "part7_mld.py":                 False,
     "part8_t2m_vs_era5.py":         False,
     "part9_rad_vs_ceres.py":        False,
-    "part10_clt_vs_modis.py":       True,
+    "part10_clt_vs_modis.py":       False,
     "part11_zonal_plots.py":        False,
     "part12_qbo.py":                False,
     "part13_fesom_bias_maps.py":    False,
@@ -84,6 +83,7 @@ SCRIPTS.update({
     "part15_enso.py":               False,
     "part16_clim_change.py":        False,
     "part17_moc.py":                False,
+    "part18_precip_vs_gpcp.py":     True,
 })
 
 # Submit jobs
