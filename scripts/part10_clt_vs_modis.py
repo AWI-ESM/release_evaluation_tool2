@@ -25,7 +25,7 @@ figsize=(6, 4.5)
 dpi = 300
 ofile = None
 res = [180, 91]
-variable = ['tcc']
+variable = ['tcc', 'lcc', 'hcc']
 variable_clim = 'clt'
 title='Cloud area fraction vs. MODIS'
 mapticks = [-50,-30,-20,-10,-6,-2,2,6,10,20,30,50]
@@ -168,6 +168,122 @@ plt.tight_layout(rect=[0, 0.07, 1, 1])  # Prevents extra box while preserving la
 ofile = variable[0] + '_vs_MODIS'
 if ofile is not None:
     plt.savefig(out_path + ofile, dpi=dpi, bbox_inches='tight')
+
+# Create 5° latitude bins for zonal analysis
+lat_bins = np.arange(-90, 91, 5)
+lat_centers = (lat_bins[:-1] + lat_bins[1:]) / 2
+
+# Function to compute zonal means in latitude bins
+def compute_zonal_mean_by_bin(data, lat_grid, lat_bins):
+    result = np.zeros(len(lat_bins) - 1)
+    
+    for i in range(len(lat_bins) - 1):
+        lat_min, lat_max = lat_bins[i], lat_bins[i+1]
+        mask = (lat_grid >= lat_min) & (lat_grid < lat_max)
+        if np.any(mask):
+            # For 2D data (lat, lon), compute mean across longitudes for each latitude band
+            if len(data.shape) == 2:
+                # Get weighted mean across longitudes for each latitude in this band
+                lat_means = np.mean(data[mask, :], axis=1)  # Mean across longitudes for each lat
+                # Get weighted mean across latitudes in this band
+                weights = np.cos(np.deg2rad(lat_grid[mask]))
+                weights = weights / np.sum(weights)  # Normalize weights
+                result[i] = np.sum(lat_means * weights)
+            else:
+                # For 1D data (already aggregated by latitude)
+                result[i] = data[mask].mean()
+    
+    return result
+
+# ================ PLOT 1: TCC Bias by Latitude Bin ================
+print('Creating TCC bias zonal plot...')
+plt.figure(figsize=(10, 6), dpi=dpi)
+
+# Compute zonal bias for each latitude bin
+# First calculate bias for each lat/lon point
+bias_data = crf_sw_model_mean[exp_name] - crf_sw_satobs_mean
+
+# Now compute zonal means by latitude band
+bias_by_lat = np.zeros(len(lat_bins) - 1)
+for i in range(len(lat_bins) - 1):
+    lat_min, lat_max = lat_bins[i], lat_bins[i+1]
+    lat_indices = np.where((lat >= lat_min) & (lat < lat_max))[0]
+    
+    if len(lat_indices) > 0:
+        # Calculate weighted mean across all longitudes for each latitude in this band
+        lat_weights = np.cos(np.deg2rad(lat[lat_indices]))
+        band_bias = np.zeros(len(lat_indices))
+        
+        for j, lat_idx in enumerate(lat_indices):
+            band_bias[j] = np.mean(bias_data[lat_idx, :])
+        
+        # Weighted average across the latitudes in this band
+        bias_by_lat[i] = np.average(band_bias, weights=lat_weights)
+
+plt.plot(lat_centers, bias_by_lat, 'b-', linewidth=2, label='TCC Bias')
+plt.axhline(y=0, color='k', linestyle='-', alpha=0.3)
+plt.grid(True, alpha=0.3)
+plt.xlabel('Latitude (°)')
+plt.ylabel('Cloud Fraction Bias (%)')
+plt.title('TCC Bias vs. MODIS by 5° Latitude Bands')
+plt.xticks(np.arange(-90, 91, 15))
+plt.legend()
+
+# Save the TCC bias zonal plot
+ofile_zonal_bias = variable[0] + '_bias_zonal'
+plt.savefig(out_path + ofile_zonal_bias, dpi=dpi, bbox_inches='tight')
+
+# ================ PLOT 2: Absolute LCC, HCC, TCC by Latitude Bin ================
+print('Creating absolute cloud cover zonal plot...')
+plt.figure(figsize=(10, 6), dpi=dpi)
+
+# Prepare data for absolute cloud fractions
+cloud_data = {}
+cloud_labels = {'tcc': 'Total Cloud Cover', 'lcc': 'Low Cloud Cover', 'hcc': 'High Cloud Cover'}
+cloud_colors = {'tcc': 'k', 'lcc': 'b', 'hcc': 'r'}
+
+# Compute zonal means for each cloud type
+for v_index, v in enumerate(['tcc', 'lcc', 'hcc']):
+    if v in data[exp_name]:
+        # Calculate mean across all years
+        cloud_mean = np.mean(data[exp_name][v], axis=0)
+        if len(np.shape(cloud_mean)) > 2:
+            cloud_mean = np.mean(cloud_mean, axis=0)
+        
+        # Add cyclic point
+        cloud_mean, _ = add_cyclic_point(cloud_mean, coord=lon)
+        
+        # Calculate zonal mean by latitude band
+        cloud_data[v] = np.zeros(len(lat_bins) - 1)
+        for i in range(len(lat_bins) - 1):
+            lat_min, lat_max = lat_bins[i], lat_bins[i+1]
+            lat_indices = np.where((lat >= lat_min) & (lat < lat_max))[0]
+            
+            if len(lat_indices) > 0:
+                # Calculate weighted mean across all longitudes for each latitude in this band
+                lat_weights = np.cos(np.deg2rad(lat[lat_indices]))
+                band_means = np.zeros(len(lat_indices))
+                
+                for j, lat_idx in enumerate(lat_indices):
+                    band_means[j] = np.mean(cloud_mean[lat_idx, :])
+                
+                # Weighted average across the latitudes in this band
+                cloud_data[v][i] = np.average(band_means, weights=lat_weights)
+        
+        # Plot the zonal mean
+        plt.plot(lat_centers, cloud_data[v], color=cloud_colors[v], linewidth=2, label=cloud_labels[v])
+
+plt.grid(True, alpha=0.3)
+plt.xlabel('Latitude (°)')
+plt.ylabel('Cloud Fraction (%)')
+plt.title('Cloud Cover by 5° Latitude Bands')
+plt.xticks(np.arange(-90, 91, 15))
+plt.ylim(0, 100)
+plt.legend()
+
+# Save the absolute cloud cover zonal plot
+ofile_zonal_abs = 'cloud_cover_zonal'
+plt.savefig(out_path + ofile_zonal_abs, dpi=dpi, bbox_inches='tight')
 
 # Mark script as completed
 update_status(SCRIPT_NAME, "Completed")
