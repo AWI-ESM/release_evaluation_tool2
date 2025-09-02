@@ -7,6 +7,8 @@ import dask
 from dask.distributed import Client, as_completed, progress
 from tqdm import tqdm
 import multiprocessing
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
 
 # Ensure safe multiprocessing
 multiprocessing.set_start_method("fork", force=True)
@@ -25,20 +27,35 @@ var = ['ssr', 'str', 'tsr', 'ttr', 'sf', 'slhf', 'sshf']
 exps = list(range(spinup_start, spinup_end + 1))
 ofile = "radiation_budget.png"
 
-# Load cell area weights from external file (lazy loading)
-area_file = f"{spinup_path}/../restart/oasis3mct/areas.nc"
-area_variable = f"{oasis_oifs_grid_name}.srf"
-try:
-    area_ds = xr.open_dataset(area_file, decode_times=False, engine="netcdf4", chunks={})
-    area_weights = area_ds[area_variable].load()  # Load into memory once, it's small
+# Generate correct area weights for the remapped grid using CDO
+import subprocess
+import tempfile
 
-    # Rename dimensions to match expected ones
-    if f"y_{oasis_oifs_grid_name}" in area_weights.dims and f"x_{oasis_oifs_grid_name}" in area_weights.dims:
-        area_weights = area_weights.rename({f"y_{oasis_oifs_grid_name}": "lat", f"x_{oasis_oifs_grid_name}": "lon"})
-
+def get_area_weights():
+    """Generate area weights that match the data grid"""
+    sample_file = f"{spinup_path}/oifs/atm_remapped_1m_ssr_1m_{spinup_start}-{spinup_start}.nc"
+    weights_file = "/tmp/radiation_area_weights.nc"
+    
+    # Generate area weights using CDO
+    cmd = f"cdo gridarea {sample_file} {weights_file}"
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to generate area weights: {result.stderr}")
+    
+    # Load the generated weights
+    area_ds = xr.open_dataset(weights_file, decode_times=False, engine="netcdf4")
+    area_weights = area_ds['cell_area']  # CDO gridarea creates 'cell_area' variable
+    area_weights_data = area_weights.load()  # Load into memory
     area_ds.close()
+    
+    return area_weights_data
+
+try:
+    area_weights = get_area_weights()
+    print(f"Generated area weights: shape={area_weights.shape}, sum={area_weights.sum().values:.2e}")
 except Exception as e:
-    print(f"Error loading area file: {e}")
+    print(f"Error generating area weights: {e}")
     area_weights = None
 
 if __name__ == "__main__":
@@ -47,35 +64,44 @@ if __name__ == "__main__":
     client = Client(n_workers=NUM_WORKERS, threads_per_worker=1)
     print(client)
 
-    def load_parallel(variable, path):
+    def load_parallel(variable, path, area_weights_data):
         try:
             ds = xr.open_dataset(path, decode_times=False, engine="netcdf4")
+            
             if variable not in ds:
                 print(f"Warning: {variable} not found in {path}")
                 return None
+            
             da = ds[variable]
+            
             time_var = "time_counter" if "time_counter" in ds else "time_centered" if "time_centered" in ds else None
             if not time_var:
                 print(f"Error: No valid time variable found in {path}")
                 return None
+            
             da = da.rename({time_var: "time"})
             da["time"] = pd.to_datetime(ds[time_var].values, origin="1775-01-01", unit="s")
             
-            # Apply preloaded area weights if available
-            if area_weights is not None:
-                try:
-                    # Interpolate area weights to match da's grid
-                    area_weights_matched = area_weights.interp_like(da, method="nearest")
-                    da = (da * area_weights_matched).sum(dim=["lat", "lon"]) / area_weights_matched.sum()
-                except Exception as e:
-                    print(f"Error applying area weights: {e}")
-                    da = da.mean(dim=["lat", "lon"])  # Fallback
-            else:
-                da = da.mean(dim=["lat", "lon"])  # No weights available
+            # Recreate area weights DataArray from passed data
+            area_weights_matched = xr.DataArray(
+                area_weights_data,
+                dims=['lat', 'lon'],
+                coords={'lat': da.lat, 'lon': da.lon}
+            )
+            
+            # Check if weights are valid (non-zero)
+            if area_weights_matched.sum().values <= 0:
+                raise ValueError("Area weights sum to zero or negative!")
+            
+            # Apply area weighting
+            weighted_sum = (da * area_weights_matched).sum(dim=["lat", "lon"])
+            weight_sum = area_weights_matched.sum()
+            da = weighted_sum / weight_sum
 
             # Compute weighted yearly mean (to match CDO yearmean)
             da = da.resample(time="YE").mean(skipna=True)
             da = da / accumulation_period
+            
             ds.close()
             return da.values
         except Exception as e:
@@ -83,12 +109,19 @@ if __name__ == "__main__":
             return None
 
     data = {}
+    
+    # Convert area weights to numpy array for passing to workers
+    if area_weights is None:
+        raise RuntimeError("Area weights are required but not loaded!")
+    
+    area_weights_data = area_weights.values
 
     for v in var:
+        print(f"Processing variable: {v}")
         futures = {}
         for exp in exps:
             path = f"{spinup_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
-            futures[exp] = client.submit(load_parallel, v, path)
+            futures[exp] = client.submit(load_parallel, v, path, area_weights_data)
         
         results = []
         for future in tqdm(as_completed(futures.values()), total=len(futures)):
@@ -96,19 +129,75 @@ if __name__ == "__main__":
             if result is not None:
                 results.append(result)
         
-        data[v] = np.squeeze(np.array(results)) if results else None
+        if results:
+            data[v] = np.squeeze(np.array(results))
+        else:
+            data[v] = None
+            print(f"Warning: No valid results for variable {v}")
 
     client.close()  # Shutdown Dask cluster when done
 
+    print("\n=== DEBUG: Radiation Balance Calculation ===")
+    
+    # Check if all required variables are available
+    required_vars = ['ssr', 'str', 'sshf', 'slhf', 'sf', 'tsr', 'ttr']
+    missing_vars = [v for v in required_vars if data.get(v) is None]
+    if missing_vars:
+        print(f"ERROR: Missing variables: {missing_vars}")
+        print("Cannot calculate radiation balance without all required variables!")
+        sys.exit(1)
+    
+    # Debug individual components before calculation
+    print("\n--- Individual Variable Statistics ---")
+    for v in required_vars:
+        if data[v] is not None:
+            vals = np.squeeze(data[v]).flatten()
+            print(f"{v:>6}: shape={vals.shape}, min={np.min(vals):>10.3f}, max={np.max(vals):>10.3f}, mean={np.mean(vals):>10.3f}, std={np.std(vals):>10.3f}")
+        else:
+            print(f"{v:>6}: None")
+
     #Calculate budget:
-    surface =   np.squeeze(data['ssr']).flatten() + \
-                np.squeeze(data['str']).flatten() + \
-                np.squeeze(data['sshf']).flatten() + \
-                np.squeeze(data['slhf']).flatten() - \
-                np.squeeze(data['sf']).flatten()*333550000 
+    ssr_vals = np.squeeze(data['ssr']).flatten()
+    str_vals = np.squeeze(data['str']).flatten() 
+    sshf_vals = np.squeeze(data['sshf']).flatten()
+    slhf_vals = np.squeeze(data['slhf']).flatten()
+    sf_vals = np.squeeze(data['sf']).flatten()
+    
+    print(f"\n--- Surface Budget Components ---")
+    print(f"SSR (shortwave down):     min={np.min(ssr_vals):>10.3f}, max={np.max(ssr_vals):>10.3f}, mean={np.mean(ssr_vals):>10.3f}")
+    print(f"STR (longwave up):       min={np.min(str_vals):>10.3f}, max={np.max(str_vals):>10.3f}, mean={np.mean(str_vals):>10.3f}")
+    print(f"SSHF (sensible heat):    min={np.min(sshf_vals):>10.3f}, max={np.max(sshf_vals):>10.3f}, mean={np.mean(sshf_vals):>10.3f}")
+    print(f"SLHF (latent heat):      min={np.min(slhf_vals):>10.3f}, max={np.max(slhf_vals):>10.3f}, mean={np.mean(slhf_vals):>10.3f}")
+    print(f"SF (snowfall):           min={np.min(sf_vals):>10.3f}, max={np.max(sf_vals):>10.3f}, mean={np.mean(sf_vals):>10.3f}")
+    
+    sf_heat_flux = sf_vals * 333550000  # Heat of fusion conversion
+    print(f"SF heat flux (W/m²):     min={np.min(sf_heat_flux):>10.3f}, max={np.max(sf_heat_flux):>10.3f}, mean={np.mean(sf_heat_flux):>10.3f}")
+    
+    surface = ssr_vals + str_vals + sshf_vals + slhf_vals - sf_heat_flux
+    print(f"Surface total:           min={np.min(surface):>10.3f}, max={np.max(surface):>10.3f}, mean={np.mean(surface):>10.3f}")
+    
     #multiply by heat of fusion: 333550000 mJ/kg - then we get the flux in W/m2
-    toa = np.squeeze(data['tsr']).flatten() + \
-          np.squeeze(data['ttr']).flatten()
+    tsr_vals = np.squeeze(data['tsr']).flatten()
+    ttr_vals = np.squeeze(data['ttr']).flatten()
+    
+    print(f"\n--- TOA Budget Components ---")
+    print(f"TSR (TOA shortwave):     min={np.min(tsr_vals):>10.3f}, max={np.max(tsr_vals):>10.3f}, mean={np.mean(tsr_vals):>10.3f}")
+    print(f"TTR (TOA longwave):      min={np.min(ttr_vals):>10.3f}, max={np.max(ttr_vals):>10.3f}, mean={np.mean(ttr_vals):>10.3f}")
+    
+    toa = tsr_vals + ttr_vals
+    print(f"TOA total:               min={np.min(toa):>10.3f}, max={np.max(toa):>10.3f}, mean={np.mean(toa):>10.3f}")
+    
+    rad_balance = toa - surface
+    print(f"\n--- Radiation Balance ---")
+    print(f"Balance (TOA - Surface): min={np.min(rad_balance):>10.3f}, max={np.max(rad_balance):>10.3f}, mean={np.mean(rad_balance):>10.3f}")
+    
+    # Check for suspicious values
+    if np.all(np.abs(surface) < 1e-6):
+        print("WARNING: Surface fluxes are essentially zero - this suggests a data loading problem!")
+    if np.all(np.abs(toa) < 1e-6):
+        print("WARNING: TOA fluxes are essentially zero - this suggests a data loading problem!")
+    if np.all(np.abs(rad_balance) < 1e-6):
+        print("WARNING: Radiation balance is essentially zero - this is highly suspicious for a climate model!")
 
     #Plot:
     def smooth(x,beta):
@@ -147,8 +236,11 @@ if __name__ == "__main__":
     axes2.set_ylim(axes.get_ylim())
 
     axes.xaxis.set_minor_locator(MultipleLocator(10))
-    axes.yaxis.set_minor_locator(MultipleLocator(0.2))
-    axes2.yaxis.set_minor_locator(MultipleLocator(0.2))
+    # Fix matplotlib tick locator issue by using reasonable intervals
+    y_range = abs(axes.get_ylim()[1] - axes.get_ylim()[0])
+    minor_tick_interval = max(1.0, y_range / 50)  # Reasonable number of minor ticks
+    axes.yaxis.set_minor_locator(MultipleLocator(minor_tick_interval))
+    axes2.yaxis.set_minor_locator(MultipleLocator(minor_tick_interval))
 
     axes.tick_params(labelsize='12')
     axes2.tick_params(labelsize='12')
