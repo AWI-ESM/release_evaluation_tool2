@@ -23,7 +23,7 @@ update_status(SCRIPT_NAME, "Started")
 
 # Config
 figsize = (7.2, 3.8)
-var = ['ssr', 'str', 'tsr', 'ttr', 'sf', 'slhf', 'sshf']
+var = ['ssr', 'str', 'tsr', 'ttr', 'tsrc', 'ttrc', 'sf', 'slhf', 'sshf']
 exps = list(range(spinup_start, spinup_end + 1))
 ofile = "radiation_budget.png"
 
@@ -141,16 +141,27 @@ if __name__ == "__main__":
     
     # Check if all required variables are available
     required_vars = ['ssr', 'str', 'sshf', 'slhf', 'sf', 'tsr', 'ttr']
+    cloud_forcing_vars = ['tsrc', 'ttrc']  # Optional for cloud forcing
     missing_vars = [v for v in required_vars if data.get(v) is None]
+    missing_cf_vars = [v for v in cloud_forcing_vars if data.get(v) is None]
+    
     if missing_vars:
         print(f"ERROR: Missing variables: {missing_vars}")
         print("Cannot calculate radiation balance without all required variables!")
         sys.exit(1)
     
+    if missing_cf_vars:
+        print(f"WARNING: Missing cloud forcing variables: {missing_cf_vars}")
+        print("Cloud forcing calculations will be skipped.")
+        calculate_cloud_forcing = False
+    else:
+        calculate_cloud_forcing = True
+    
     # Debug individual components before calculation
     print("\n--- Individual Variable Statistics ---")
-    for v in required_vars:
-        if data[v] is not None:
+    all_vars = required_vars + cloud_forcing_vars
+    for v in all_vars:
+        if data.get(v) is not None:
             vals = np.squeeze(data[v]).flatten()
             print(f"{v:>6}: shape={vals.shape}, min={np.min(vals):>10.3f}, max={np.max(vals):>10.3f}, mean={np.mean(vals):>10.3f}, std={np.std(vals):>10.3f}")
         else:
@@ -190,6 +201,35 @@ if __name__ == "__main__":
     rad_balance = toa - surface
     print(f"\n--- Radiation Balance ---")
     print(f"Balance (TOA - Surface): min={np.min(rad_balance):>10.3f}, max={np.max(rad_balance):>10.3f}, mean={np.mean(rad_balance):>10.3f}")
+    
+    # Cloud forcing calculations
+    if calculate_cloud_forcing:
+        tsrc_vals = np.squeeze(data['tsrc']).flatten()
+        ttrc_vals = np.squeeze(data['ttrc']).flatten()
+        
+        # LWCF = ttr - ttrc (longwave cloud forcing)
+        # Positive LWCF means clouds reduce OLR (trap longwave)
+        lwcf_vals = ttr_vals - ttrc_vals
+        
+        # SWCF = tsr - tsrc (shortwave cloud forcing)
+        swcf_vals = tsr_vals - tsrc_vals
+        
+        print(f"\n--- Cloud Forcing Components ---")
+        print(f"TSRC (clear-sky TOA SW): min={np.min(tsrc_vals):>10.3f}, max={np.max(tsrc_vals):>10.3f}, mean={np.mean(tsrc_vals):>10.3f}")
+        print(f"TTRC (clear-sky TOA LW): min={np.min(ttrc_vals):>10.3f}, max={np.max(ttrc_vals):>10.3f}, mean={np.mean(ttrc_vals):>10.3f}")
+        
+        print(f"\n--- Cloud Forcing ---")
+        print(f"LWCF (LW cloud forcing): min={np.min(lwcf_vals):>10.3f}, max={np.max(lwcf_vals):>10.3f}, mean={np.mean(lwcf_vals):>10.3f}")
+        print(f"SWCF (SW cloud forcing): min={np.min(swcf_vals):>10.3f}, max={np.max(swcf_vals):>10.3f}, mean={np.mean(swcf_vals):>10.3f}")
+        
+        # Net cloud forcing
+        net_cf_vals = lwcf_vals + swcf_vals
+        print(f"Net cloud forcing:       min={np.min(net_cf_vals):>10.3f}, max={np.max(net_cf_vals):>10.3f}, mean={np.mean(net_cf_vals):>10.3f}")
+        
+        print(f"\nInterpretation:")
+        print(f"- Positive LWCF ({np.mean(lwcf_vals):>6.3f} W/m²) means clouds trap longwave radiation")
+        print(f"- {'Positive' if np.mean(swcf_vals) > 0 else 'Negative'} SWCF ({np.mean(swcf_vals):>6.3f} W/m²) means clouds {'reduce' if np.mean(swcf_vals) < 0 else 'increase'} reflected shortwave")
+        print(f"- Net cloud effect: {np.mean(net_cf_vals):>6.3f} W/m² ({'warming' if np.mean(net_cf_vals) > 0 else 'cooling'})")
     
     # Check for suspicious values
     if np.all(np.abs(surface) < 1e-6):
