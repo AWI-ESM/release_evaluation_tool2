@@ -214,9 +214,6 @@ if __name__ == "__main__":
         # SWCF = tsr - tsrc (shortwave cloud forcing)
         swcf_vals = tsr_vals - tsrc_vals
         
-        print(f"\n--- Cloud Forcing Components ---")
-        print(f"TSRC (clear-sky TOA SW): min={np.min(tsrc_vals):>10.3f}, max={np.max(tsrc_vals):>10.3f}, mean={np.mean(tsrc_vals):>10.3f}")
-        print(f"TTRC (clear-sky TOA LW): min={np.min(ttrc_vals):>10.3f}, max={np.max(ttrc_vals):>10.3f}, mean={np.mean(ttrc_vals):>10.3f}")
         
         print(f"\n--- Cloud Forcing ---")
         print(f"LWCF (LW cloud forcing): min={np.min(lwcf_vals):>10.3f}, max={np.max(lwcf_vals):>10.3f}, mean={np.mean(lwcf_vals):>10.3f}")
@@ -242,14 +239,19 @@ if __name__ == "__main__":
     #Plot:
     def smooth(x,beta):
         """ kaiser window smoothing """
-        window_len=11
+        # Adjust window length based on data size
+        window_len = min(11, len(x))
+        if window_len < 3:
+            return x  # No smoothing for very short series
         beta=10
         # extending the data at beginning and at the end
         # to apply the window at the borders
         s = np.r_[x[window_len-1:0:-1],x,x[-1:-window_len:-1]]
         w = np.kaiser(window_len,beta)
         y = np.convolve(w/w.sum(),s,mode='valid')
-        return y[5:len(y)-5]
+        # Adjust trimming based on window size
+        trim = window_len//2
+        return y[trim:len(y)-trim] if len(y) > 2*trim else x
 
     fig, axes = plt.subplots(figsize=figsize)
     years = range(spinup_start, spinup_end+1)
@@ -258,9 +260,17 @@ if __name__ == "__main__":
     plt.plot(years,toa,linewidth=1,color='orange', label='_nolegend_')
     plt.plot(years,(toa-surface),linewidth=1,color='grey', label='_nolegend_')
 
-    plt.plot(years,smooth(surface,len(surface)),color='darkblue')
-    plt.plot(years,smooth(toa,len(toa)),color='orange')
-    plt.plot(years,smooth((toa-surface),len(toa-surface)),color='grey')
+    # Only plot smoothed lines if we have enough data points
+    if len(surface) >= 3:
+        surface_smooth = smooth(surface,len(surface))
+        toa_smooth = smooth(toa,len(toa))
+        balance_smooth = smooth((toa-surface),len(toa-surface))
+        
+        # Ensure smoothed arrays match the years array length
+        if len(surface_smooth) == len(years):
+            plt.plot(years,surface_smooth,color='darkblue')
+            plt.plot(years,toa_smooth,color='orange')
+            plt.plot(years,balance_smooth,color='grey')
 
     axes.set_title('Radiative balance',fontweight="bold")
 
