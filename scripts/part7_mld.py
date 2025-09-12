@@ -26,10 +26,14 @@ def define_rowscol(input_paths, columns=2, reduce=0):
     nrows = math.ceil(number_paths / columns)
     return [nrows, ncol]
 
+# Import weight file utility
+from utils import ensure_weight_file
+
 def load_parallel(variable, path, remap_resolution, meshpath, mesh_file):
     """Load data in parallel using CDO."""
+    weight_file = ensure_weight_file(remap_resolution, meshpath, mesh_file)
     data1 = cdo.yseasmean(
-        input=f'-setmissval,nan -setctomiss,0 -remap,r{remap_resolution},{meshpath}/weights_unstr_2_r{remap_resolution}.nc -setgrid,{meshpath}/{mesh_file} {path}',
+        input=f'-setmissval,nan -setctomiss,0 -remap,r{remap_resolution},{weight_file} -setgrid,{meshpath}/{mesh_file} {path}',
         returnArray=variable
     )
     return data1

@@ -55,11 +55,15 @@ def define_rowscol(input_paths, columns=len(input_paths), reduce=0):
     nrows = math.ceil(number_paths / columns)
     return [nrows, ncol]
 
+# Import weight file utility
+from utils import ensure_weight_file
+
 # Load model Data
 data = OrderedDict()
 
 def load_parallel(variable,path,remap_resolution,meshpath,mesh_file):
-    data1 = cdo.copy(input='-setmissval,nan -setctomiss,0 -remap,r'+remap_resolution+','+meshpath+'/weights_unstr_2_r'+remap_resolution+'.nc -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
+    weight_file = ensure_weight_file(remap_resolution, meshpath, mesh_file)
+    data1 = cdo.copy(input='-setmissval,nan -setctomiss,0 -remap,r'+remap_resolution+','+weight_file+' -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
     np.shape(data1)
     return data1
 

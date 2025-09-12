@@ -30,13 +30,20 @@ levels = [-1.5, 1.5, 11]
 mapticks = np.arange(levels[0],levels[1],0.1)
 
 
+# Import weight file utility
+from utils import ensure_weight_file
+
+# Ensure weight file exists before processing
+weight_file = ensure_weight_file(remap_resolution, meshpath, mesh_file)
+
 # Load reference data
 path=reference_path+'/'+variable+'.fesom.'+str(reference_years)+'.nc'
-data_ref = cdo.yearmean(input='-fldmean -setctomiss,0 -remap,r'+remap_resolution+','+meshpath+'/weights_unstr_2_r'+remap_resolution+'.nc -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
+data_ref = cdo.yearmean(input='-fldmean -setctomiss,0 -remap,r'+remap_resolution+','+weight_file+' -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
 data_ref = np.squeeze(data_ref)
 
 def load_parallel(variable,path,remap_resolution,meshpath,mesh_file):
-    data1 = cdo.yearmean(input='-fldmean -setctomiss,0 -remap,r'+remap_resolution+','+meshpath+'/weights_unstr_2_r'+remap_resolution+'.nc -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
+    weight_file = ensure_weight_file(remap_resolution, meshpath, mesh_file)
+    data1 = cdo.yearmean(input='-fldmean -setctomiss,0 -remap,r'+remap_resolution+','+weight_file+' -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
     return data1
 
 
