@@ -3,8 +3,6 @@ import os
 import xarray as xr
 import pandas as pd
 import numpy as np
-import dask
-from dask.diagnostics import ProgressBar
 from tqdm import tqdm
 import multiprocessing
 import matplotlib.pyplot as plt
@@ -13,9 +11,6 @@ from matplotlib.colors import ListedColormap, BoundaryNorm, TwoSlopeNorm
 import matplotlib.colors as mcolors
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-
-# Set Dask to use threads by default (avoid multiprocessing issues)
-dask.config.set(scheduler='threads')
 
 # Ensure safe multiprocessing
 multiprocessing.set_start_method("fork", force=True)
@@ -67,7 +62,7 @@ def global_area_mean(da):
     return da_global
 
 def load_yearly_data_simple(path, var, years, pattern, freq):
-    """Load and process data to yearly means - simple xarray approach"""
+    """Load and process data to yearly means - optimized xarray approach"""
     print(f"Processing variable: {var}")
     
     files = []
@@ -371,47 +366,35 @@ if __name__ == "__main__":
     slhf_spatial_list = []
     sf_spatial_list = []
     
-    # Load data from all available years using Dask parallel processing
+    # Load data from all available years using sequential processing
     years_to_process = list(range(spinup_start, spinup_end + 1))
-    print(f"Loading spatial data for {len(years_to_process)} years using Dask...")
+    print(f"Loading spatial data for {len(years_to_process)} years sequentially...")
     
-    # Create Dask delayed tasks for parallel loading
+    # Process in chunks to avoid memory issues
     batch_size = 20  # Process in chunks to avoid memory issues
     data_batches = []
     
     for i in range(0, len(years_to_process), batch_size):
         batch = years_to_process[i:i+batch_size]
-        t = []
         
-        for year in batch:
+        print(f"Processing batch {i//batch_size + 1}/{(len(years_to_process) + batch_size - 1)//batch_size}")
+        
+        batch_data = []
+        for year in tqdm(batch):
             ssr_path = f"{spinup_path}/oifs/atm_remapped_1m_ssr_1m_{year:04d}-{year:04d}.nc"
             str_path = f"{spinup_path}/oifs/atm_remapped_1m_str_1m_{year:04d}-{year:04d}.nc"
             sshf_path = f"{spinup_path}/oifs/atm_remapped_1m_sshf_1m_{year:04d}-{year:04d}.nc"
             slhf_path = f"{spinup_path}/oifs/atm_remapped_1m_slhf_1m_{year:04d}-{year:04d}.nc"
             sf_path = f"{spinup_path}/oifs/atm_remapped_1m_sf_1m_{year:04d}-{year:04d}.nc"
             
-            # Create delayed tasks for each variable
-            ssr_task = dask.delayed(load_spatial_data)('ssr', ssr_path)
-            str_task = dask.delayed(load_spatial_data)('str', str_path)
-            sshf_task = dask.delayed(load_spatial_data)('sshf', sshf_path)
-            slhf_task = dask.delayed(load_spatial_data)('slhf', slhf_path)
-            sf_task = dask.delayed(load_spatial_data)('sf', sf_path)
+            # Load data for each variable sequentially
+            ssr_data = load_spatial_data('ssr', ssr_path)
+            str_data = load_spatial_data('str', str_path)
+            sshf_data = load_spatial_data('sshf', sshf_path)
+            slhf_data = load_spatial_data('slhf', slhf_path)
+            sf_data = load_spatial_data('sf', sf_path)
             
-            # Group tasks for this year
-            year_tasks = (ssr_task, str_task, sshf_task, slhf_task, sf_task)
-            t.append(year_tasks)
-        
-        print(f"Processing batch {i//batch_size + 1}/{(len(years_to_process) + batch_size - 1)//batch_size}")
-        with ProgressBar():
-            batch_results = dask.compute(*[task for year_tasks in t for task in year_tasks], scheduler='threads')
-        
-        # Reshape results back to (year, variable) structure
-        batch_data = []
-        for j in range(len(batch)):
-            year_data = batch_results[j*5:(j+1)*5]  # 5 variables per year
-            ssr_data, str_data, sshf_data, slhf_data, sf_data = year_data
-            
-            if all(data is not None for data in year_data):
+            if all(data is not None for data in [ssr_data, str_data, sshf_data, slhf_data, sf_data]):
                 # Take mean over time dimension if 3D
                 if ssr_data.ndim == 3:
                     ssr_data = np.mean(ssr_data, axis=0)
