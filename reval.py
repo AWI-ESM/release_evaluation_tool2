@@ -86,6 +86,7 @@ SCRIPTS.update({
     "part18_precip_vs_gpcp.py":     True,
     "part19_ocean_temp_sections.py": True,
     "part20_gregory_plot.py":       True,
+    "part21_crf_bias_maps.py":      True,
 })
 
 # Submit jobs
