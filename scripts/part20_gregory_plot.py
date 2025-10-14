@@ -90,13 +90,10 @@ def load_yearly_data_simple(path, var, years, pattern, freq):
     try:
         print(f"Loading {len(files)} files for {var}...")
         
-        # Use modern CFDatetimeCoder to avoid deprecation warnings
-        time_coder = xr.coders.CFDatetimeCoder(use_cftime=True)
-        
         # Load files with explicit time decoding to handle mixed calendar types
         ds = xr.open_mfdataset(files, combine="by_coords", parallel=False, 
                              chunks={'time_counter': 12}, 
-                             decode_times=time_coder,
+                             decode_times=True, use_cftime=True,
                              combine_attrs='drop_conflicts')
         
         # Get the variable data
