@@ -4,11 +4,18 @@ import xarray as xr
 import pandas as pd
 import numpy as np
 import dask
-from dask.distributed import Client, as_completed, progress
+from dask.diagnostics import ProgressBar
 from tqdm import tqdm
 import multiprocessing
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
+from matplotlib.colors import ListedColormap, BoundaryNorm, TwoSlopeNorm
+import matplotlib.colors as mcolors
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+
+# Set Dask to use threads by default (avoid multiprocessing issues)
+dask.config.set(scheduler='threads')
 
 # Ensure safe multiprocessing
 multiprocessing.set_start_method("fork", force=True)
@@ -27,115 +34,161 @@ var = ['ssr', 'str', 'tsr', 'ttr', 'tsrc', 'ttrc', 'sf', 'slhf', 'sshf']
 exps = list(range(spinup_start, spinup_end + 1))
 ofile = "radiation_budget.png"
 
-# Generate correct area weights for the remapped grid using CDO
-import subprocess
-import tempfile
+def global_area_mean(da):
+    """Calculate proper area-weighted global mean."""
+    # Find latitude coordinate
+    lat_coord = None
+    for coord in ['lat', 'latitude', 'y']:
+        if coord in da.coords:
+            lat_coord = coord
+            break
+    
+    if lat_coord is None:
+        raise ValueError(f"No latitude coordinate found. Available coords: {list(da.coords.keys())}")
+    
+    # Calculate cosine latitude weights (proper area weighting for regular lat-lon grid)
+    # This accounts for the fact that grid cells get smaller towards the poles
+    weights = np.cos(np.deg2rad(da[lat_coord]))
+    
+    # For regular grids, this is equivalent to proper area weighting since:
+    # - All longitude bands have the same Δlon
+    # - Area ∝ cos(lat) * Δlat * Δlon, and Δlat is constant
+    # - So relative weights are just cos(lat)
+    
+    # Compute weighted mean over spatial dimensions
+    spatial_dims = [lat_coord]
+    if 'lon' in da.dims:
+        spatial_dims.append('lon')
+    elif 'longitude' in da.dims:
+        spatial_dims.append('longitude')
+    
+    da_global = da.weighted(weights).mean(dim=spatial_dims)
+    
+    return da_global
 
-def get_area_weights():
-    """Generate area weights that match the data grid"""
-    sample_file = f"{spinup_path}/oifs/atm_remapped_1m_ssr_1m_{spinup_start}-{spinup_start}.nc"
-    weights_file = "/tmp/radiation_area_weights.nc"
+def load_yearly_data_simple(path, var, years, pattern, freq):
+    """Load and process data to yearly means - simple xarray approach"""
+    print(f"Processing variable: {var}")
     
-    # Generate area weights using CDO
-    cmd = f"cdo gridarea {sample_file} {weights_file}"
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    files = []
+    for year in years:
+        filepath = os.path.join(path, pattern.format(year=year))
+        if os.path.exists(filepath):
+            files.append(filepath)
+        else:
+            print(f"WARNING: Missing file {filepath}")
     
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to generate area weights: {result.stderr}")
+    if not files:
+        print(f"ERROR: No files found for variable '{var}'")
+        return None
     
-    # Load the generated weights
-    area_ds = xr.open_dataset(weights_file, decode_times=False, engine="netcdf4")
-    area_weights = area_ds['cell_area']  # CDO gridarea creates 'cell_area' variable
-    area_weights_data = area_weights.load()  # Load into memory
-    area_ds.close()
-    
-    return area_weights_data
+    try:
+        print(f"Loading {len(files)} files for {var}...")
+        
+        # Load files with explicit time decoding to handle mixed calendar types
+        ds = xr.open_mfdataset(files, combine="by_coords", parallel=False, 
+                             chunks={'time_counter': 12}, 
+                             decode_times=True, use_cftime=True,
+                             combine_attrs='drop_conflicts')
+        
+        # Get the variable data
+        var_data = ds[var]
+        
+        # Normalize by accumulation period ONLY for flux variables (not temperature)
+        if var != '2t':  # Don't normalize temperature
+            var_data = var_data / accumulation_period
+        
+        # Calculate global area mean
+        global_mean = global_area_mean(var_data)
+        
+        # Convert to yearly means using groupby
+        yearly_data = global_mean.groupby('time_counter.year').mean()
+        
+        # Force computation to avoid lazy evaluation
+        yearly_data = yearly_data.compute()
+        
+        print(f"Loaded {var}: {len(files)} files -> {len(yearly_data)} yearly values")
+        return yearly_data
+        
+    except Exception as e:
+        print(f"ERROR loading {var}: {e}")
+        return None
 
-try:
-    area_weights = get_area_weights()
-    print(f"Generated area weights: shape={area_weights.shape}, sum={area_weights.sum().values:.2e}")
-except Exception as e:
-    print(f"Error generating area weights: {e}")
-    area_weights = None
+def detect_file_pattern(path, var, years):
+    """Detect file pattern and frequency for a variable"""
+    # Try 1m files first
+    pattern_1m = f"atm_remapped_1m_{var}_1m_{{year:04d}}-{{year:04d}}.nc"
+    test_file = os.path.join(path, pattern_1m.format(year=years[0]))
+    if os.path.exists(test_file):
+        return pattern_1m, "1m"
+    
+    # Try 6h files
+    pattern_6h = f"atm_remapped_6h_{var}_6h_{{year:04d}}-{{year:04d}}.nc"
+    test_file = os.path.join(path, pattern_6h.format(year=years[0]))
+    if os.path.exists(test_file):
+        return pattern_6h, "6h"
+    
+    return None, None
+
+def load_spatial_data(variable, path):
+    """Load spatial data for mapping using xarray"""
+    try:
+        if not os.path.exists(path):
+            print(f"WARNING: File does not exist: {path}")
+            return None
+            
+        # Load single file
+        ds = xr.open_dataset(path, decode_times=True, use_cftime=True)
+        
+        # Get the variable data
+        var_data = ds[variable]
+        
+        # Normalize by accumulation period ONLY for flux variables (not temperature)
+        if variable != '2t':  # Don't normalize temperature
+            var_data = var_data / accumulation_period
+        
+        # Take time mean if multiple time steps
+        if 'time_counter' in var_data.dims:
+            var_data = var_data.mean('time_counter')
+            
+        return var_data.values
+            
+    except Exception as e:
+        print(f"ERROR processing spatial data {path}: {e}")
+        return None
 
 if __name__ == "__main__":
-    # Set up Dask client with a user-defined number of workers
-    NUM_WORKERS = 3  # Adjust as needed
-    client = Client(n_workers=NUM_WORKERS, threads_per_worker=1)
-    print(client)
-
-    def load_parallel(variable, path, area_weights_data):
-        try:
-            ds = xr.open_dataset(path, decode_times=False, engine="netcdf4")
-            
-            if variable not in ds:
-                print(f"Warning: {variable} not found in {path}")
-                return None
-            
-            da = ds[variable]
-            
-            time_var = "time_counter" if "time_counter" in ds else "time_centered" if "time_centered" in ds else None
-            if not time_var:
-                print(f"Error: No valid time variable found in {path}")
-                return None
-            
-            da = da.rename({time_var: "time"})
-            da["time"] = pd.to_datetime(ds[time_var].values, origin="1775-01-01", unit="s")
-            
-            # Recreate area weights DataArray from passed data
-            area_weights_matched = xr.DataArray(
-                area_weights_data,
-                dims=['lat', 'lon'],
-                coords={'lat': da.lat, 'lon': da.lon}
-            )
-            
-            # Check if weights are valid (non-zero)
-            if area_weights_matched.sum().values <= 0:
-                raise ValueError("Area weights sum to zero or negative!")
-            
-            # Apply area weighting
-            weighted_sum = (da * area_weights_matched).sum(dim=["lat", "lon"])
-            weight_sum = area_weights_matched.sum()
-            da = weighted_sum / weight_sum
-
-            # Compute weighted yearly mean (to match CDO yearmean)
-            da = da.resample(time="YE").mean(skipna=True)
-            da = da / accumulation_period
-            
-            ds.close()
-            return da.values
-        except Exception as e:
-            print(f"Error processing {path}: {e}")
-            return None
-
+    print("Loading radiation balance data using proper xarray approach...")
+    
+    # Define years and path
+    years = list(range(spinup_start, spinup_end + 1))
+    
+    # Detect file patterns and load data
+    patterns = {}
+    frequencies = {}
     data = {}
     
-    # Convert area weights to numpy array for passing to workers
-    if area_weights is None:
-        raise RuntimeError("Area weights are required but not loaded!")
+    required_vars = ['ssr', 'str', 'tsr', 'ttr', 'tsrc', 'ttrc', 'sf', 'slhf', 'sshf']
     
-    area_weights_data = area_weights.values
-
-    for v in var:
-        print(f"Processing variable: {v}")
-        futures = {}
-        for exp in exps:
-            path = f"{spinup_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
-            futures[exp] = client.submit(load_parallel, v, path, area_weights_data)
-        
-        results = []
-        for future in tqdm(as_completed(futures.values()), total=len(futures)):
-            result = future.result()
-            if result is not None:
-                results.append(result)
-        
-        if results:
-            data[v] = np.squeeze(np.array(results))
-        else:
-            data[v] = None
-            print(f"Warning: No valid results for variable {v}")
-
-    client.close()  # Shutdown Dask cluster when done
+    print("Detecting file patterns...")
+    for variable in required_vars:
+        pattern, freq = detect_file_pattern(spinup_path + "/oifs", variable, years)
+        if pattern is None:
+            print(f"ERROR: No files found for {variable}")
+            continue
+        patterns[variable] = pattern
+        frequencies[variable] = freq
+        print(f"Found {variable} files: {freq} frequency")
+    
+    print("\nLoading data with proper area weighting...")
+    for variable in required_vars:
+        if variable in patterns:
+            yearly_data = load_yearly_data_simple(spinup_path + "/oifs", variable, years, patterns[variable], frequencies[variable])
+            if yearly_data is not None:
+                data[variable] = yearly_data.values
+            else:
+                print(f"Failed to load {variable}")
+                data[variable] = None
 
     print("\n=== DEBUG: Radiation Balance Calculation ===")
     
@@ -168,11 +221,15 @@ if __name__ == "__main__":
             print(f"{v:>6}: None")
 
     #Calculate budget:
-    ssr_vals = np.squeeze(data['ssr']).flatten()
-    str_vals = np.squeeze(data['str']).flatten() 
-    sshf_vals = np.squeeze(data['sshf']).flatten()
-    slhf_vals = np.squeeze(data['slhf']).flatten()
-    sf_vals = np.squeeze(data['sf']).flatten()
+    # Data is now already global means for each year
+    print(f"Using data from {len(data['ssr'])} years")
+    
+    # Data is already global means - no need for additional averaging
+    ssr_vals = data['ssr']
+    str_vals = data['str'] 
+    sshf_vals = data['sshf']
+    slhf_vals = data['slhf']
+    sf_vals = data['sf']
     
     print(f"\n--- Surface Budget Components ---")
     print(f"SSR (shortwave down):     min={np.min(ssr_vals):>10.3f}, max={np.max(ssr_vals):>10.3f}, mean={np.mean(ssr_vals):>10.3f}")
@@ -188,8 +245,8 @@ if __name__ == "__main__":
     print(f"Surface total:           min={np.min(surface):>10.3f}, max={np.max(surface):>10.3f}, mean={np.mean(surface):>10.3f}")
     
     #multiply by heat of fusion: 333550000 mJ/kg - then we get the flux in W/m2
-    tsr_vals = np.squeeze(data['tsr']).flatten()
-    ttr_vals = np.squeeze(data['ttr']).flatten()
+    tsr_vals = data['tsr']
+    ttr_vals = data['ttr']
     
     print(f"\n--- TOA Budget Components ---")
     print(f"TSR (TOA shortwave):     min={np.min(tsr_vals):>10.3f}, max={np.max(tsr_vals):>10.3f}, mean={np.mean(tsr_vals):>10.3f}")
@@ -204,8 +261,8 @@ if __name__ == "__main__":
     
     # Cloud forcing calculations
     if calculate_cloud_forcing:
-        tsrc_vals = np.squeeze(data['tsrc']).flatten()
-        ttrc_vals = np.squeeze(data['ttrc']).flatten()
+        tsrc_vals = data['tsrc']
+        ttrc_vals = data['ttrc']
         
         # LWCF = ttr - ttrc (longwave cloud forcing)
         # Positive LWCF means clouds reduce OLR (trap longwave)
@@ -239,10 +296,13 @@ if __name__ == "__main__":
     #Plot:
     def smooth(x,beta):
         """ kaiser window smoothing """
-        # Adjust window length based on data size
+        # Ensure window length is no longer than the timeseries
         window_len = min(11, len(x))
         if window_len < 3:
             return x  # No smoothing for very short series
+        # Make window_len odd for proper centering
+        if window_len % 2 == 0:
+            window_len -= 1
         beta=10
         # extending the data at beginning and at the end
         # to apply the window at the borders
@@ -254,7 +314,7 @@ if __name__ == "__main__":
         return y[trim:len(y)-trim] if len(y) > 2*trim else x
 
     fig, axes = plt.subplots(figsize=figsize)
-    years = range(spinup_start, spinup_end+1)
+    years = range(spinup_start, spinup_start + len(data['ssr']))
 
     plt.plot(years,surface,linewidth=1,color='darkblue', label='_nolegend_')
     plt.plot(years,toa,linewidth=1,color='orange', label='_nolegend_')
@@ -301,6 +361,240 @@ if __name__ == "__main__":
     if ofile is not None:
         plt.savefig(out_path+ofile, dpi=dpi,bbox_inches='tight')
 
+    # Load spatial data for map plots
+    print("\n=== Loading spatial data for map plots ===")
+    
+    # Load all surface energy balance components for spatial maps
+    ssr_spatial_list = []
+    str_spatial_list = []
+    sshf_spatial_list = []
+    slhf_spatial_list = []
+    sf_spatial_list = []
+    
+    # Load data from all available years using Dask parallel processing
+    years_to_process = list(range(spinup_start, spinup_end + 1))
+    print(f"Loading spatial data for {len(years_to_process)} years using Dask...")
+    
+    # Create Dask delayed tasks for parallel loading
+    batch_size = 20  # Process in chunks to avoid memory issues
+    data_batches = []
+    
+    for i in range(0, len(years_to_process), batch_size):
+        batch = years_to_process[i:i+batch_size]
+        t = []
+        
+        for year in batch:
+            ssr_path = f"{spinup_path}/oifs/atm_remapped_1m_ssr_1m_{year:04d}-{year:04d}.nc"
+            str_path = f"{spinup_path}/oifs/atm_remapped_1m_str_1m_{year:04d}-{year:04d}.nc"
+            sshf_path = f"{spinup_path}/oifs/atm_remapped_1m_sshf_1m_{year:04d}-{year:04d}.nc"
+            slhf_path = f"{spinup_path}/oifs/atm_remapped_1m_slhf_1m_{year:04d}-{year:04d}.nc"
+            sf_path = f"{spinup_path}/oifs/atm_remapped_1m_sf_1m_{year:04d}-{year:04d}.nc"
+            
+            # Create delayed tasks for each variable
+            ssr_task = dask.delayed(load_spatial_data)('ssr', ssr_path)
+            str_task = dask.delayed(load_spatial_data)('str', str_path)
+            sshf_task = dask.delayed(load_spatial_data)('sshf', sshf_path)
+            slhf_task = dask.delayed(load_spatial_data)('slhf', slhf_path)
+            sf_task = dask.delayed(load_spatial_data)('sf', sf_path)
+            
+            # Group tasks for this year
+            year_tasks = (ssr_task, str_task, sshf_task, slhf_task, sf_task)
+            t.append(year_tasks)
+        
+        print(f"Processing batch {i//batch_size + 1}/{(len(years_to_process) + batch_size - 1)//batch_size}")
+        with ProgressBar():
+            batch_results = dask.compute(*[task for year_tasks in t for task in year_tasks], scheduler='threads')
+        
+        # Reshape results back to (year, variable) structure
+        batch_data = []
+        for j in range(len(batch)):
+            year_data = batch_results[j*5:(j+1)*5]  # 5 variables per year
+            ssr_data, str_data, sshf_data, slhf_data, sf_data = year_data
+            
+            if all(data is not None for data in year_data):
+                # Take mean over time dimension if 3D
+                if ssr_data.ndim == 3:
+                    ssr_data = np.mean(ssr_data, axis=0)
+                if str_data.ndim == 3:
+                    str_data = np.mean(str_data, axis=0)
+                if sshf_data.ndim == 3:
+                    sshf_data = np.mean(sshf_data, axis=0)
+                if slhf_data.ndim == 3:
+                    slhf_data = np.mean(slhf_data, axis=0)
+                if sf_data.ndim == 3:
+                    sf_data = np.mean(sf_data, axis=0)
+                
+                ssr_spatial_list.append(ssr_data)
+                str_spatial_list.append(str_data)
+                sshf_spatial_list.append(sshf_data)
+                slhf_spatial_list.append(slhf_data)
+                sf_spatial_list.append(sf_data)
+    
+    # Calculate multi-year mean
+    if ssr_spatial_list and str_spatial_list and sshf_spatial_list and slhf_spatial_list and sf_spatial_list:
+        ssr_spatial = np.mean(ssr_spatial_list, axis=0)
+        str_spatial = np.mean(str_spatial_list, axis=0)
+        sshf_spatial = np.mean(sshf_spatial_list, axis=0)
+        slhf_spatial = np.mean(slhf_spatial_list, axis=0)
+        sf_spatial = np.mean(sf_spatial_list, axis=0)
+    else:
+        ssr_spatial = None
+        str_spatial = None
+        sshf_spatial = None
+        slhf_spatial = None
+        sf_spatial = None
+    
+    if all(data is not None for data in [ssr_spatial, str_spatial, sshf_spatial, slhf_spatial, sf_spatial]):
+            
+        # Calculate complete surface energy balance (same as global mean calculation)
+        sf_heat_flux_spatial = sf_spatial * 333550000  # Heat of fusion conversion
+        net_surface_balance = ssr_spatial + str_spatial + sshf_spatial + slhf_spatial - sf_heat_flux_spatial
+        
+        # Create coordinate arrays for plotting
+        lon = np.linspace(0, 359, net_surface_balance.shape[1])
+        lat = np.linspace(-90, 90, net_surface_balance.shape[0])
+        
+        # Calculate zonal mean
+        zonal_mean = np.mean(net_surface_balance, axis=1, keepdims=True)
+        
+        # Calculate anomaly from zonal mean
+        net_surface_anomaly = net_surface_balance - zonal_mean
+        
+        # Plot 1: Net Surface Radiation Map
+        fig1, ax1 = plt.subplots(figsize=(12, 8), subplot_kw={'projection': ccrs.PlateCarree()})
+        
+        # Create irregular spaced levels for better detail at different ranges
+        vmax = max(abs(np.nanmin(net_surface_balance)), abs(np.nanmax(net_surface_balance)))
+        
+        # Define irregular levels with more detail near zero
+        base_levels = np.array([-300, -100, -30, -10, -3, -1, 1, 3, 10, 30, 100, 300])
+        
+        # Use the full base levels - extend='both' will handle values beyond ±300
+        levels = base_levels.copy()
+        
+        # Create colors for each level interval - direct mapping
+        colors = []
+        
+        for i in range(len(levels) - 1):
+            level_low = levels[i]
+            level_high = levels[i+1]
+            
+            # Direct mapping based on exact level boundaries
+            if level_low == -300 and level_high == -100:
+                colors.append('#053061')  # Darkest blue
+            elif level_low == -100 and level_high == -30:
+                colors.append('#2166ac')  # Dark blue
+            elif level_low == -30 and level_high == -10:
+                colors.append('#4393c3')  # Medium blue
+            elif level_low == -10 and level_high == -3:
+                colors.append('#92c5de')  # Light blue
+            elif level_low == -3 and level_high == -1:
+                colors.append('#d1e5f0')  # Very light blue
+            elif level_low == -1 and level_high == 1:
+                colors.append('#ffffff')   # White
+            elif level_low == 1 and level_high == 3:
+                colors.append('#fde0dd')  # Very light red
+            elif level_low == 3 and level_high == 10:
+                colors.append('#f4a582')  # Light red
+            elif level_low == 10 and level_high == 30:
+                colors.append('#d6604d')  # Medium red
+            elif level_low == 30 and level_high == 100:
+                colors.append('#b2182b')  # Dark red
+            elif level_low == 100 and level_high == 300:
+                colors.append('#67001f')  # Darkest red
+        
+        # Create colormap and normalization with extend colors for values beyond ±300
+        custom_cmap = ListedColormap(colors)
+        custom_cmap.set_under('#000033')  # Ultra dark blue for < -300
+        custom_cmap.set_over('#330000')   # Ultra dark red for > +300
+        norm = BoundaryNorm(levels, ncolors=len(colors))
+        
+        # Plot the data
+        im1 = ax1.contourf(lon, lat, net_surface_balance, 
+                          levels=levels, cmap=custom_cmap, norm=norm, transform=ccrs.PlateCarree(), extend='both')
+        
+        # Add map features
+        ax1.add_feature(cfeature.COASTLINE)
+        ax1.add_feature(cfeature.BORDERS)
+        ax1.set_global()
+        ax1.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
+        
+        # Add colorbar
+        cbar1 = plt.colorbar(im1, ax=ax1, orientation='horizontal', pad=0.1, shrink=0.8)
+        cbar1.set_label('Net Surface Energy Balance (W/m²)', fontsize=12)
+        
+        ax1.set_title(f'Net Surface Energy Balance - Multi-year Mean ({spinup_start}-{spinup_end})', fontsize=14, fontweight='bold')
+        
+        plt.tight_layout()
+        plt.savefig(out_path+'net_surface_radiation_map.png', dpi=dpi, bbox_inches='tight')
+        plt.close()
+        
+        # Plot 2: Net Surface Radiation Anomaly Map
+        fig2, ax2 = plt.subplots(figsize=(12, 8), subplot_kw={'projection': ccrs.PlateCarree()})
+        
+        # Use same levels for anomaly plot
+        levels_anom = base_levels.copy()
+        
+        # Create colors for anomaly (same direct mapping)
+        colors_anom = []
+        
+        for i in range(len(levels_anom) - 1):
+            level_low = levels_anom[i]
+            level_high = levels_anom[i+1]
+            
+            # Direct mapping based on exact level boundaries
+            if level_low == -300 and level_high == -100:
+                colors_anom.append('#053061')  # Darkest blue
+            elif level_low == -100 and level_high == -30:
+                colors_anom.append('#2166ac')  # Dark blue
+            elif level_low == -30 and level_high == -10:
+                colors_anom.append('#4393c3')  # Medium blue
+            elif level_low == -10 and level_high == -3:
+                colors_anom.append('#92c5de')  # Light blue
+            elif level_low == -3 and level_high == -1:
+                colors_anom.append('#d1e5f0')  # Very light blue
+            elif level_low == -1 and level_high == 1:
+                colors_anom.append('#ffffff')   # White
+            elif level_low == 1 and level_high == 3:
+                colors_anom.append('#fde0dd')  # Very light red
+            elif level_low == 3 and level_high == 10:
+                colors_anom.append('#f4a582')  # Light red
+            elif level_low == 10 and level_high == 30:
+                colors_anom.append('#d6604d')  # Medium red
+            elif level_low == 30 and level_high == 100:
+                colors_anom.append('#b2182b')  # Dark red
+            elif level_low == 100 and level_high == 300:
+                colors_anom.append('#67001f')  # Darkest red
+        
+        custom_cmap_anom = ListedColormap(colors_anom)
+        custom_cmap_anom.set_under('#000033')  # Ultra dark blue for < -300
+        custom_cmap_anom.set_over('#330000')   # Ultra dark red for > +300
+        norm_anom = BoundaryNorm(levels_anom, ncolors=len(colors_anom))
+        
+        im2 = ax2.contourf(lon, lat, net_surface_anomaly, 
+                          levels=levels_anom, cmap=custom_cmap_anom, norm=norm_anom, transform=ccrs.PlateCarree(), extend='both')
+        
+        # Add map features
+        ax2.add_feature(cfeature.COASTLINE)
+        ax2.add_feature(cfeature.BORDERS)
+        ax2.set_global()
+        ax2.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
+        
+        # Add colorbar
+        cbar2 = plt.colorbar(im2, ax=ax2, orientation='horizontal', pad=0.1, shrink=0.8)
+        cbar2.set_label('Net Surface Energy Balance Anomaly from Zonal Mean (W/m²)', fontsize=12)
+        
+        ax2.set_title(f'Net Surface Energy Balance - Zonal Mean Anomaly - Multi-year Mean ({spinup_start}-{spinup_end})', fontsize=14, fontweight='bold')
+        
+        plt.tight_layout()
+        plt.savefig(out_path+'net_surface_radiation_anomaly.png', dpi=dpi, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Map plots saved:")
+        print(f"  - Net surface energy balance map: {out_path}net_surface_radiation_map.png")
+        print(f"  - Net surface energy balance anomaly: {out_path}net_surface_radiation_anomaly.png")
+    else:
+        print("Warning: Could not load spatial data for map plots")
 
     # Mark as completed
     update_status(SCRIPT_NAME, " Completed")

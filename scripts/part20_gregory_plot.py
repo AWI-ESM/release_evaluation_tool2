@@ -123,7 +123,7 @@ def load_yearly_data_simple(path, var, years, pattern, freq):
         return None
 
 def global_area_mean(da):
-    """Calculate area-weighted global mean using cosine latitude weights."""
+    """Calculate proper area-weighted global mean."""
     # Find latitude coordinate
     lat_coord = None
     for coord in ['lat', 'latitude', 'y']:
@@ -132,13 +132,24 @@ def global_area_mean(da):
             break
     
     if lat_coord is None:
-        raise ValueError("No latitude coordinate found")
+        raise ValueError(f"No latitude coordinate found. Available coords: {list(da.coords.keys())}")
     
-    # Calculate area weights
+    # Calculate cosine latitude weights (proper area weighting for regular lat-lon grid)
+    # This accounts for the fact that grid cells get smaller towards the poles
     weights = np.cos(np.deg2rad(da[lat_coord]))
     
+    # For regular grids, this is equivalent to proper area weighting since:
+    # - All longitude bands have the same Δlon
+    # - Area ∝ cos(lat) * Δlat * Δlon, and Δlat is constant
+    # - So relative weights are just cos(lat)
+    
     # Compute weighted mean over spatial dimensions
-    spatial_dims = [lat_coord, 'lon']
+    spatial_dims = [lat_coord]
+    if 'lon' in da.dims:
+        spatial_dims.append('lon')
+    elif 'longitude' in da.dims:
+        spatial_dims.append('longitude')
+    
     da_global = da.weighted(weights).mean(dim=spatial_dims)
     
     return da_global
