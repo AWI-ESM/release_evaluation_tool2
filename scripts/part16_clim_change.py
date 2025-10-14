@@ -11,6 +11,64 @@ print(SCRIPT_NAME)
 # Mark as started
 update_status(SCRIPT_NAME, " Started")
 
+def global_area_mean(da):
+    """Calculate proper area-weighted global mean."""
+    # Find latitude coordinate
+    lat_coord = None
+    for coord in ['lat', 'latitude', 'y']:
+        if coord in da.coords:
+            lat_coord = coord
+            break
+    
+    if lat_coord is None:
+        raise ValueError(f"No latitude coordinate found. Available coords: {list(da.coords.keys())}")
+    
+    # Calculate cosine latitude weights (proper area weighting for regular lat-lon grid)
+    weights = np.cos(np.deg2rad(da[lat_coord]))
+    
+    # Compute weighted mean over spatial dimensions
+    spatial_dims = [lat_coord]
+    if 'lon' in da.dims:
+        spatial_dims.append('lon')
+    elif 'longitude' in da.dims:
+        spatial_dims.append('longitude')
+    
+    da_global = da.weighted(weights).mean(dim=spatial_dims)
+    
+    return da_global
+
+def load_yearly_data_simple(path, var):
+    """Load and process single file to yearly mean with proper area weighting"""
+    try:
+        if not os.path.exists(path):
+            print(f"WARNING: Missing file {path}")
+            return None
+            
+        # Load single file with simple time decoding
+        ds = xr.open_dataset(path, decode_times=True, use_cftime=True, chunks={'time_counter': 12})
+        
+        # Get the variable data
+        var_data = ds[var]
+        
+        # Normalize by accumulation period ONLY for flux variables (not temperature)
+        if var != '2t':  # Don't normalize temperature
+            var_data = var_data / accumulation_period
+        
+        # Calculate global area mean
+        global_mean = global_area_mean(var_data)
+        
+        # Convert to yearly mean using groupby
+        yearly_data = global_mean.groupby('time_counter.year').mean()
+        
+        # Force computation to avoid lazy evaluation
+        yearly_data = yearly_data.compute()
+        
+        return yearly_data.values[0] if len(yearly_data.values) == 1 else yearly_data.values.mean()
+        
+    except Exception as e:
+        print(f"ERROR loading {path}: {e}")
+        return None
+
 
 # parameters cell
 input_paths = [historic_path]
@@ -46,62 +104,56 @@ def smooth(x,beta):
     return y[5:len(y)-5]
 
 
-# Load Data
-def load_parallel(variable,path):
-    data1 = cdo.yearmean(input='-fldmean '+str(path),returnArray=variable)
-    return data1
+# Load Data using xarray approach
+print("Loading historical data with proper area weighting...")
 
 data = OrderedDict()
-v=var
-paths = []
+v = var
 data[v] = []
 
-batch_size = 20
-
 for exp_path, exp_name in zip(input_paths, input_names):
-
-    data_batches = []
-    for i in range(0, len(exps), batch_size):
-        datat = []
-        t = []
-
-        batch = exps[i:i+batch_size]  # Process in chunks of 20
-        for exp in tqdm(batch):
-            path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
-            temporary = dask.delayed(load_parallel)(var, path)
-            t.append(temporary)
-
-        with ProgressBar():
-            datat = dask.compute(*t, scheduler='threads')
-
-        data_batches.extend(datat)  # Collect results
-
-    data[v] = np.squeeze(data_batches)
+    print(f"Processing {exp_name}...")
+    
+    data_results = []
+    for exp in tqdm(exps):
+        path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
+        yearly_mean = load_yearly_data_simple(path, var)
+        if yearly_mean is not None:
+            data_results.append(yearly_mean)
+        else:
+            print(f"Failed to load {path}")
+    
+    data[v] = np.array(data_results)
+    print(f"Loaded {len(data_results)} files for historical data")
     
     
+print("Loading control data with proper area weighting...")
+
 ctrl_data = OrderedDict()
-v=var
-paths = []
+v = var
 ctrl_data[v] = []
-for exp_path, exp_name  in zip(ctrl_input_paths, ctrl_input_names):
 
-    data_batches = []
-    for i in range(0, len(exps), batch_size):
-        datat = []
-        t = []
+for exp_path, exp_name in zip(ctrl_input_paths, ctrl_input_names):
+    print(f"Processing {exp_name}...")
+    
+    ctrl_results = []
+    for exp in tqdm(exps):
+        path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
+        yearly_mean = load_yearly_data_simple(path, var)
+        if yearly_mean is not None:
+            ctrl_results.append(yearly_mean)
+        else:
+            print(f"Failed to load {path}")
+    
+    ctrl_data[v] = np.array(ctrl_results)
+    print(f"Loaded {len(ctrl_results)} files for control data")
 
-        batch = exps[i:i+batch_size]  # Process in chunks of 20
-        for exp in tqdm(batch):
-            path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
-            temporary = dask.delayed(load_parallel)(var, path)
-            t.append(temporary)
-
-        with ProgressBar():
-            datat = dask.compute(*t, scheduler='threads')
-
-        data_batches.extend(datat)  # Collect results
-
-    ctrl_data[v] = np.squeeze(data_batches)
+# Check if we have data before proceeding
+if len(data[var]) == 0 or len(ctrl_data[var]) == 0:
+    print("ERROR: No data loaded successfully!")
+    print(f"Historical data: {len(data[var])} files")
+    print(f"Control data: {len(ctrl_data[var])} files")
+    sys.exit(1)
     
     
 # extract data
