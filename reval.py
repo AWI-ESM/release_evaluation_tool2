@@ -84,6 +84,8 @@ SCRIPTS.update({
     "part16_clim_change.py":        True,
     "part17_moc.py":                True,
     "part18_precip_vs_gpcp.py":     True,
+    "part19_ocean_temp_sections.py": True,
+    "part20_gregory_plot.py":       True,
 })
 
 # Submit jobs
