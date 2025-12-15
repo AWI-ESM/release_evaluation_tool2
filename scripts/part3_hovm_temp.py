@@ -41,36 +41,57 @@ path=reference_path+'/'+variable+'.fesom.'+str(reference_years)+'.nc'
 data_ref = cdo.yearmean(input='-fldmean -setctomiss,0 -remap,r'+remap_resolution+','+weight_file+' -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
 data_ref = np.squeeze(data_ref)
 
-def load_parallel(variable,path,remap_resolution,meshpath,mesh_file):
-    weight_file = ensure_weight_file(remap_resolution, meshpath, mesh_file)
-    data1 = cdo.yearmean(input='-fldmean -setctomiss,0 -remap,r'+remap_resolution+','+weight_file+' -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
-    return data1
+import xarray as xr
+import pyfesom2 as pf
 
-
-batch_size = 50  # Limit to 50 files at a time
+def compute_global_mean_by_depth(var_data):
+    """Compute global mean for each depth level and year using vectorized operations"""
+    
+    # Replace 0 with NaN (same as CDO's setctomiss,0)
+    var_data = var_data.where(var_data != 0)
+    
+    # Compute mean across spatial dimension (nodes) - matches CDO's fldmean
+    # This is a simple mean, not area-weighted, matching the original CDO behavior
+    global_mean = var_data.mean(dim='nod2')
+    
+    # Compute and return as numpy array
+    print("Computing global means (this may take a minute)...")
+    result = global_mean.compute()
+    
+    return result.values.astype(np.float32)
 
 for exp_path, exp_name in zip(input_paths, input_names):
-    data[exp_name] = []
-    temp_results = []
-
-    # Process in batches
-    for i in range(0, len(years), batch_size):
-        batch_years = years[i : i + batch_size]  # Get a batch of 50 years
-        t = []
-
-        for year in batch_years:
-            path = f"{exp_path}/{variable}.fesom.{year}.nc"
-            temp = dask.delayed(load_parallel)(variable, path, remap_resolution, meshpath, mesh_file)
-            t.append(temp)
-
-        with ProgressBar():
-            batch_data = dask.compute(*t)  # Compute only the current batch
-            temp_results.extend(batch_data)
-    data[exp_name] = np.array(data[exp_name], dtype=np.float64)
-    data[exp_name] = np.squeeze(np.array(temp_results, dtype=object))
-    print(np.shape(data[exp_name]))
-    print(data[exp_name])
-    #data[exp_name] = np.squeeze(temp_results)
+    print(f"Processing {exp_name} using PyFESOM2/xarray approach...")
+    
+    # Build file paths
+    file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years]
+    print(f"Opening {len(file_paths)} files with xarray.open_mfdataset...")
+    
+    # Open all files at once with xarray (lazy loading)
+    # parallel=False to avoid NetCDF thread-safety issues
+    dataset = xr.open_mfdataset(
+        file_paths, 
+        combine='by_coords', 
+        parallel=False,
+        decode_times=True,
+        use_cftime=True,
+        chunks={'time': 12}  # Chunk by month for efficiency
+    )
+    
+    # Get variable and compute yearly means (lazy)
+    print("Grouping by year and computing temporal means...")
+    var_data = dataset[variable]
+    yearly_data = var_data.groupby('time.year').mean('time')
+    
+    # Compute global means for each depth level
+    print("Computing global means for each depth level...")
+    data[exp_name] = compute_global_mean_by_depth(yearly_data)
+    
+    print(f"Final shape: {np.shape(data[exp_name])}")
+    print(f"Completed processing for {exp_name}")
+    
+    # Close dataset
+    dataset.close()
 
 
     
@@ -82,36 +103,12 @@ data_ref_expand = OrderedDict()
 
 
 
-# Get the shape of the data
-data_shape = np.shape(data[exp_name][0])
-print(f"Data shape for first entry: {data_shape}")
-print(f"Expected depth count: {len(depths)-1}")
-print(f"Number of years in data: {len(data[exp_name])}")
+# Data is already in shape (years, depths), just verify and use it
+print(f"Data shape: {np.shape(data[exp_name])}")
+print(f"Expected: ({len(years)}, {len(depths)-1})")
 
-# Initialize newdata array
-newdata = np.empty((len(depths)-1, len(data[exp_name])), dtype=np.float64)  # Avoid NoneType issues
-print(f"Newdata shape: {np.shape(newdata)}")
-
-# Iterate through the data and populate newdata
-for i in range(len(data[exp_name])):
-    try:
-        reshaped_data = np.array(data[exp_name][i]).squeeze()  # Remove unnecessary dimensions
-        
-        # Handle different cases
-        if reshaped_data.shape == (len(depths)-1,):
-            newdata[:, i] = reshaped_data  # Correct shape
-        elif len(reshaped_data.shape) > 1 and reshaped_data.shape[0] > 1:
-            print(f"Warning: Multiple entries at year index {i}, taking the first one.")
-            newdata[:, i] = reshaped_data[0]  # Take the first entry if multiple exist
-        else:
-            raise ValueError(f"Unexpected shape {reshaped_data.shape} at year index {i}")  # Catch any unhandled cases
-
-    except Exception as e:
-        print(f"Skipping index {i} due to error: {e}")
-        newdata[:, i] = np.nan  # Assign NaN to prevent NoneType issues
-
-# Transpose and update data
-data[exp_name] = newdata.T
+# Data is already in the correct format - no reshaping needed!
+# Shape is (years, depths) which is what we need for the Hovmöller plot
 
 # Expand reference data
 data_ref_expand = np.tile(data_ref, (np.shape(data[exp_name])[0], 1))

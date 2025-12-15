@@ -34,18 +34,18 @@ update_status(SCRIPT_NAME, " Started")
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
-# PI control experiment path
-PI_CTRL_PATH = os.environ.get(
-    "AWICM3_PI_CTRL_PATH", 
-    pi_ctrl_path + "/oifs/"
+# Spinup experiment path (analyzing spinup as PI control equivalent)
+SPINUP_PATH = os.environ.get(
+    "AWICM3_SPINUP_PATH", 
+    spinup_path + "/oifs/"
 )
 
 # Configuration options
 USE_SURFACE_BUDGET = True  # Set to True to use surface energy budget instead of TOA
 
-# Years to analyze (use full PI control period)
-PI_YEARS = list(range(pi_ctrl_start, pi_ctrl_end + 1))
-print(f"Analyzing PI control years: {pi_ctrl_start}-{pi_ctrl_end} ({len(PI_YEARS)} years)")
+# Years to analyze (use spinup period)
+SPINUP_YEARS = list(range(spinup_start, spinup_end + 1))
+print(f"Analyzing spinup years: {spinup_start}-{spinup_end} ({len(SPINUP_YEARS)} years)")
 print(f"Energy budget method: {'Surface' if USE_SURFACE_BUDGET else 'TOA'}")
 
 # Output file
@@ -154,9 +154,12 @@ def global_area_mean(da):
 # -----------------------------------------------------------------------------
 # Load and process data
 # -----------------------------------------------------------------------------
-print("Loading PI control data...")
+print("Loading spinup data...")
 
-# Load required data based on budget method
+# Detect file patterns for each variable
+patterns = {}
+frequencies = {}
+
 if USE_SURFACE_BUDGET:
     print("Loading surface energy budget data...")
     required_vars = ['2t', 'ssr', 'str', 'sshf', 'slhf', 'sf']
@@ -176,11 +179,10 @@ else:
         'tsr': 'TOA solar radiation',
         'ttr': 'TOA thermal radiation'
     }
-patterns = {}
-frequencies = {}
 
+# Detect patterns for all required variables
 for var in required_vars:
-    pattern, freq = detect_file_pattern(PI_CTRL_PATH, var, PI_YEARS)
+    pattern, freq = detect_file_pattern(SPINUP_PATH, var, SPINUP_YEARS)
     if pattern is None:
         print(f"ERROR: No files found for {var}")
         sys.exit(1)
@@ -189,7 +191,7 @@ for var in required_vars:
     print(f"Found {var} files: {freq} frequency")
 
 # Load temperature data
-temp_data = load_yearly_data_simple(PI_CTRL_PATH, '2t', PI_YEARS, patterns['2t'], frequencies['2t'])
+temp_data = load_yearly_data_simple(SPINUP_PATH, '2t', SPINUP_YEARS, patterns['2t'], frequencies['2t'])
 if temp_data is None:
     print("ERROR: Failed to load temperature data")
     sys.exit(1)
@@ -197,11 +199,11 @@ if temp_data is None:
 # Load energy budget data and calculate imbalance
 if USE_SURFACE_BUDGET:
     # Load surface energy budget components
-    ssr_data = load_yearly_data_simple(PI_CTRL_PATH, 'ssr', PI_YEARS, patterns['ssr'], frequencies['ssr'])
-    str_data = load_yearly_data_simple(PI_CTRL_PATH, 'str', PI_YEARS, patterns['str'], frequencies['str'])
-    sshf_data = load_yearly_data_simple(PI_CTRL_PATH, 'sshf', PI_YEARS, patterns['sshf'], frequencies['sshf'])
-    slhf_data = load_yearly_data_simple(PI_CTRL_PATH, 'slhf', PI_YEARS, patterns['slhf'], frequencies['slhf'])
-    sf_data = load_yearly_data_simple(PI_CTRL_PATH, 'sf', PI_YEARS, patterns['sf'], frequencies['sf'])
+    ssr_data = load_yearly_data_simple(SPINUP_PATH, 'ssr', SPINUP_YEARS, patterns['ssr'], frequencies['ssr'])
+    str_data = load_yearly_data_simple(SPINUP_PATH, 'str', SPINUP_YEARS, patterns['str'], frequencies['str'])
+    sshf_data = load_yearly_data_simple(SPINUP_PATH, 'sshf', SPINUP_YEARS, patterns['sshf'], frequencies['sshf'])
+    slhf_data = load_yearly_data_simple(SPINUP_PATH, 'slhf', SPINUP_YEARS, patterns['slhf'], frequencies['slhf'])
+    sf_data = load_yearly_data_simple(SPINUP_PATH, 'sf', SPINUP_YEARS, patterns['sf'], frequencies['sf'])
     
     if any(data is None for data in [ssr_data, str_data, sshf_data, slhf_data, sf_data]):
         print("ERROR: Failed to load surface energy budget data")
@@ -217,8 +219,8 @@ if USE_SURFACE_BUDGET:
     # Calculate surface energy imbalance (following part2_rad_balance.py)
     # Surface budget = SSR + STR + SSHF + SLHF - SF_heat_flux
     # All fluxes are now in W/m² after normalization by accumulation_period
-    # Convert SF from kg/m²/s to W/m² using heat of fusion
-    sf_heat_flux = sf_global * 334000  # Heat of fusion for ice (J/kg)
+    # Convert SF from kg/m²/s to W/m² using heat of fusion (same as part2)
+    sf_heat_flux = sf_global * 333550000  # Heat of fusion for ice (J/kg) - same as part2
     energy_imbalance = ssr_global + str_global + sshf_global + slhf_global - sf_heat_flux
     
     print("Surface energy budget components loaded and calculated")
@@ -230,8 +232,8 @@ if USE_SURFACE_BUDGET:
     
 else:
     # Load TOA energy budget components  
-    tsr_data = load_yearly_data_simple(PI_CTRL_PATH, 'tsr', PI_YEARS, patterns['tsr'], frequencies['tsr'])
-    ttr_data = load_yearly_data_simple(PI_CTRL_PATH, 'ttr', PI_YEARS, patterns['ttr'], frequencies['ttr'])
+    tsr_data = load_yearly_data_simple(SPINUP_PATH, 'tsr', SPINUP_YEARS, patterns['tsr'], frequencies['tsr'])
+    ttr_data = load_yearly_data_simple(SPINUP_PATH, 'ttr', SPINUP_YEARS, patterns['ttr'], frequencies['ttr'])
     
     if tsr_data is None or ttr_data is None:
         print("ERROR: Failed to load TOA energy budget data")
@@ -273,23 +275,33 @@ imbalance_vals = imbalance_vals[mask]
 
 print(f"Analysis points before outlier removal: {len(temp_vals)} years")
 
-# Remove outliers (more than 2 standard deviations away)
-temp_mean = np.mean(temp_vals)
-temp_std = np.std(temp_vals)
-imbalance_mean = np.mean(imbalance_vals)
-imbalance_std = np.std(imbalance_vals)
+# Regression-based outlier detection
+print("Step 1: Computing initial regression from all points...")
+initial_reg = linregress(temp_vals, imbalance_vals)
+initial_slope = initial_reg.slope
+initial_intercept = initial_reg.intercept
 
-# Create mask for points within 2 standard deviations
-temp_outlier_mask = np.abs(temp_vals - temp_mean) <= 2 * temp_std
-imbalance_outlier_mask = np.abs(imbalance_vals - imbalance_mean) <= 2 * imbalance_std
-outlier_mask = temp_outlier_mask & imbalance_outlier_mask
+# Calculate predicted values and residuals
+predicted_vals = initial_slope * temp_vals + initial_intercept
+residuals = imbalance_vals - predicted_vals
+
+# Remove outliers based on residuals (more than 2 standard deviations from regression line)
+residual_std = np.std(residuals)
+residual_threshold = 2 * residual_std
+
+print(f"Initial regression: slope={initial_slope:.3f} W/m²/K, intercept={initial_intercept:.3f} W/m²")
+print(f"Residual standard deviation: {residual_std:.3f} W/m²")
+print(f"Outlier threshold: ±{residual_threshold:.3f} W/m² from regression line")
+
+# Create mask for points within threshold distance from regression line
+outlier_mask = np.abs(residuals) <= residual_threshold
 
 # Apply outlier mask
 temp_vals_clean = temp_vals[outlier_mask]
 imbalance_vals_clean = imbalance_vals[outlier_mask]
 
 n_outliers = len(temp_vals) - len(temp_vals_clean)
-print(f"Removed {n_outliers} outliers (>2σ)")
+print(f"Step 2: Removed {n_outliers} outliers (>2σ from regression line)")
 print(f"Analysis points after outlier removal: {len(temp_vals_clean)} years")
 print(f"Temperature range: {np.min(temp_vals):.3f} to {np.max(temp_vals):.3f} °C")
 print(f"Energy imbalance range: {np.min(imbalance_vals):.3f} to {np.max(imbalance_vals):.3f} W/m²")
@@ -298,22 +310,34 @@ print(f"Energy imbalance range: {np.min(imbalance_vals):.3f} to {np.max(imbalanc
 # Statistical analysis
 # -----------------------------------------------------------------------------
 if len(temp_vals_clean) > 1:
+    print("Step 3: Computing final regression without outliers...")
     reg = linregress(temp_vals_clean, imbalance_vals_clean)
     drift_rate = reg.slope  # W/m²/K
     intercept = reg.intercept  # W/m²
     r_squared = reg.rvalue**2
     p_value = reg.pvalue
     
+    print(f"Final regression: slope={drift_rate:.3f} W/m²/K, intercept={intercept:.3f} W/m²")
+    print(f"R²={r_squared:.3f}, p-value={p_value:.3e}")
+    
+    # Initial state (first 10 years mean)
+    initial_temp = np.mean(temp_vals_clean[:10])
+    initial_imbalance = np.mean(imbalance_vals_clean[:10])
+    
+    # Final state (last 10 years mean)
+    final_temp = np.mean(temp_vals_clean[-10:])
+    final_imbalance = np.mean(imbalance_vals_clean[-10:])
+    
     print("\nDrift Analysis:")
     print(f"  Drift rate: {drift_rate:.3f} W/m²/K")
     print(f"  Intercept: {intercept:.3f} W/m²")
     print(f"  R²: {r_squared:.3f}")
     
-    # Final state (last year)
-    final_temp = temp_vals_clean[-1]
-    final_imbalance = imbalance_vals_clean[-1]
+    print(f"\nInitial State (first 10 years: {SPINUP_YEARS[0]}-{SPINUP_YEARS[9]}):")
+    print(f"  Temperature: {initial_temp:.3f} °C")
+    print(f"  Energy imbalance: {initial_imbalance:.3f} W/m²")
     
-    print(f"\nFinal State (year {PI_YEARS[-1]}):")
+    print(f"\nFinal State (last 10 years: {SPINUP_YEARS[-10]}-{SPINUP_YEARS[-1]}):")
     print(f"  Temperature: {final_temp:.3f} °C")
     print(f"  Energy imbalance: {final_imbalance:.3f} W/m²")
 else:
@@ -363,9 +387,9 @@ ax.plot(equilibrium_temp, 0, 'ro', markersize=10, zorder=6, label='Final State P
 ax.axhline(0, color='gray', linestyle='-', alpha=0.5, zorder=1)
 
 # Annotations for first and last years
-ax.text(temp_vals[0], imbalance_vals[0], f'{PI_YEARS[0]}', 
+ax.text(temp_vals[0], imbalance_vals[0], f'{SPINUP_YEARS[0]}', 
         fontsize=9, ha='right', va='bottom', color='black', weight='bold')
-ax.text(temp_vals[-1], imbalance_vals[-1], f'{PI_YEARS[-1]}', 
+ax.text(temp_vals[-1], imbalance_vals[-1], f'{SPINUP_YEARS[-1]}', 
         fontsize=9, ha='left', va='top', color='black', weight='bold')
 
 # Set axis limits dynamically based on data range with reasonable bounds
@@ -394,7 +418,7 @@ else:
 ax.set_xlabel('Global Mean Temperature (°C)', fontsize=12)
 budget_type = 'Surface' if USE_SURFACE_BUDGET else 'TOA'
 ax.set_ylabel(f'{budget_type} Energy Imbalance (W m⁻²)', fontsize=12)
-ax.set_title(f'PI Control Temperature vs {budget_type} Energy Balance - {model_version}\n({PI_YEARS[0]}-{PI_YEARS[-1]})', 
+ax.set_title(f'Spinup Temperature vs {budget_type} Energy Balance - {model_version}\n({SPINUP_YEARS[0]}-{SPINUP_YEARS[-1]})', 
              fontsize=14, fontweight='bold')
 
 # Colorbar for time evolution
@@ -426,11 +450,11 @@ print(f"PI control drift analysis saved to: {output_path}")
 # -----------------------------------------------------------------------------
 # Assessment summary
 # -----------------------------------------------------------------------------
-print(f"\n=== PI Control Assessment Summary ===")
+print(f"\n=== Spinup Assessment Summary ===")
 print(f"Model: {model_version}")
-print(f"Period: {PI_YEARS[0]}-{PI_YEARS[-1]} ({len(PI_YEARS)} years)")
+print(f"Period: {SPINUP_YEARS[0]}-{SPINUP_YEARS[-1]} ({len(SPINUP_YEARS)} years)")
 print(f"")
-print(f"Final State:")
+print(f"Final State (last 10 years mean):")
 print(f"  Temperature: {final_temp:.3f} °C")
 print(f"  Energy imbalance: {final_imbalance:.3f} W/m²")
 print(f"")
