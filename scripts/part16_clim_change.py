@@ -94,6 +94,9 @@ pylab.rcParams.update(params)
 
 def smooth(x,beta):
     """ kaiser window smoothing """
+    # Skip smoothing for short datasets to preserve array length
+    if len(x) < 10:
+        return x
     window_len=11
     beta=10
     # extending the data at beginning and at the end

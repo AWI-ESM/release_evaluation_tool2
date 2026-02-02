@@ -333,11 +333,14 @@ if len(temp_vals_clean) > 1:
     print(f"  Intercept: {intercept:.3f} W/m²")
     print(f"  R²: {r_squared:.3f}")
     
-    print(f"\nInitial State (first 10 years: {SPINUP_YEARS[0]}-{SPINUP_YEARS[9]}):")
+    # Handle cases with fewer than 10 years
+    n_initial = min(10, len(SPINUP_YEARS))
+    n_final = min(10, len(SPINUP_YEARS))
+    print(f"\nInitial State (first {n_initial} years: {SPINUP_YEARS[0]}-{SPINUP_YEARS[n_initial-1]}):")
     print(f"  Temperature: {initial_temp:.3f} °C")
     print(f"  Energy imbalance: {initial_imbalance:.3f} W/m²")
     
-    print(f"\nFinal State (last 10 years: {SPINUP_YEARS[-10]}-{SPINUP_YEARS[-1]}):")
+    print(f"\nFinal State (last {n_final} years: {SPINUP_YEARS[-n_final]}-{SPINUP_YEARS[-1]}):")
     print(f"  Temperature: {final_temp:.3f} °C")
     print(f"  Energy imbalance: {final_imbalance:.3f} W/m²")
 else:
