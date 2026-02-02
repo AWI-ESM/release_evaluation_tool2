@@ -46,7 +46,7 @@ from cartopy import config
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.util import add_cyclic_point
-from mpl_toolkits.basemap import Basemap
+# from mpl_toolkits.basemap import Basemap  # Not available in this environment
 import cmocean as cmo
 from cmocean import cm as cmof
 import matplotlib.pylab as pylab
@@ -84,19 +84,19 @@ model_version  = 'AWI-CM-v3.3'
 oasis_oifs_grid_name = 'A096'
 
 #Spinup
-spinup_path    = '/work/bb1469/a270092/runtime/awicm3-develop/TUNE13_GGAUSS+RVICE+ENTSTPC3+RALBSEAD/outdata/'
+spinup_path    = '/work/bb1469/a270092/runtime/awicm3-v3.3.0/SPIN/outdata'
 spinup_name    = model_version+'_spinup'
-spinup_start   = 1990
-spinup_end     = 2039
+spinup_start   = 1350
+spinup_end     = 1849
 
 #Preindustrial Control
-pi_ctrl_path   = '/work/bb1469/a270092/runtime/awicm3-v3.3.0/PI/outdata/'
+pi_ctrl_path   = '/work/bb1469/a270092/runtime/awicm3-v3.3.0/PICT/outdata'
 pi_ctrl_name   = model_version+'_pi-control'
 pi_ctrl_start  = 1850
 pi_ctrl_end    = 2014
 
 #Historic
-historic_path  = '/work/bb1469/a270092/runtime/awicm3-v3.3.0/HIST/outdata/'
+historic_path  = '/work/bb1469/a270092/runtime/awicm3-v3.3.0/HIST/outdata'
 historic_name  = model_version+'_historic'
 historic_start = 1850
 historic_end   = 2014
@@ -120,7 +120,7 @@ abg            = [0, 0, 0]
 reference_path = '/work/ab0246/a270092/postprocessing/climatologies/fdiag/'
 reference_name = 'clim'
 reference_years= 1958
-accumulation_period = 21600
+accumulation_period = 1 #21600
 
 observation_path = '/work/ab0246/a270092/obs/'
 

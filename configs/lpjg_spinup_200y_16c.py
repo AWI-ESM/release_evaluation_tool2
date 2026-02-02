@@ -36,6 +36,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.colors as colors
+import matplotlib.colors as mcolors
 from matplotlib.ticker import (MultipleLocator, FormatStrFormatter,
                                AutoMinorLocator)
 from matplotlib.ticker import Locator
@@ -80,40 +81,40 @@ from bg_routines.colormap_c2c    import *
 ############################
 
 #Name of model release
-model_version  = 'AWI-CM-v3.3'
-oasis_oifs_grid_name = 'A096'
+model_version  = 'lpjg-spinup-develop-200y_16c'
+oasis_oifs_grid_name = 'A128'
 
 #Spinup
-spinup_path    = '/work/bb1469/a270092/runtime/awicm3-develop/TUNE13_GGAUSS+RVICE+ENTSTPC3+RALBSEAD/outdata/'
+spinup_path    = '/work/bb1469/a270092/runtime/lpjg-spinup-develop/200y_16c/outdata/'
 spinup_name    = model_version+'_spinup'
-spinup_start   = 1990
-spinup_end     = 2039
+spinup_start   = 2505
+spinup_end     = 2509
 
 #Preindustrial Control
-pi_ctrl_path   = '/work/bb1469/a270092/runtime/awicm3-v3.3.0/PI/outdata/'
+pi_ctrl_path   = spinup_path
 pi_ctrl_name   = model_version+'_pi-control'
-pi_ctrl_start  = 1850
-pi_ctrl_end    = 2014
+pi_ctrl_start  = spinup_start
+pi_ctrl_end    = spinup_end
 
 #Historic
-historic_path  = '/work/bb1469/a270092/runtime/awicm3-v3.3.0/HIST/outdata/'
+historic_path  = spinup_path
 historic_name  = model_version+'_historic'
-historic_start = 1850
-historic_end   = 2014
+historic_start = spinup_start
+historic_end   = spinup_end
 
 
 #Misc
 reanalysis             = 'ERA5'
 remap_resolution       = '512x256'
 dpi                    = 300
-historic_last25y_start = historic_end-25
+historic_last25y_start = historic_start  # Use start year since we only have 5 years
 historic_last25y_end   = historic_end
 status_csv             = "log/status.csv"
 
 #Mesh
 mesh_name      = 'CORE2'
-grid_name      = 'TCo95'
-meshpath       = '/work/ab0246/a270092/input/fesom2/core2/'
+grid_name      = 'TL255'
+meshpath       = '/work/ab0246/a270092/input/fesom2/core3/'
 mesh_file      = 'mesh.nc'
 griddes_file   = 'mesh.nc'
 abg            = [0, 0, 0]

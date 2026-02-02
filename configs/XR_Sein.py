@@ -80,23 +80,23 @@ from bg_routines.colormap_c2c    import *
 ############################
 
 #Name of model release
-model_version  = 'AWI-CM-v3.4_rc1'
-oasis_oifs_grid_name = 'A096'
+model_version  = 'N44'
+oasis_oifs_grid_name = 'A640'
 
 #Spinup
-spinup_path    = '/work/bb1469/a270092/runtime/awicm3-develop/SPIN/outdata/'
+spinup_path    = '/work/ab0246/a270092/downloads/N44/outdata/'
 spinup_name    = model_version+'_spinup'
 spinup_start   = 1350
 spinup_end     = 1849
 
 #Preindustrial Control
-pi_ctrl_path   = '/work/bb1469/a270092/runtime/awicm3-develop/PI/outdata/'
+pi_ctrl_path   = '/work/ab0246/a270092/downloads/N44/outdata/'
 pi_ctrl_name   = model_version+'_pi-control'
 pi_ctrl_start  = 1850
 pi_ctrl_end    = 2014
 
 #Historic
-historic_path  = '/work/bb1469/a270092/runtime/awicm3-develop/HIST/outdata/'
+historic_path  = '/work/ab0246/a270092/downloads/N44/outdata/'
 historic_name  = model_version+'_historic'
 historic_start = 1850
 historic_end   = 2014
