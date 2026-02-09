@@ -120,8 +120,7 @@ SCRIPTS.update({
     "part20_gregory_plot.py":       True,
     "part21_crf_bias_maps.py":      True,
     "part22_masks.py":              True,
-    "part23_ice_cavity_velocities.py": True,  # Using improved multi-panel version
-    # LPJ-GUESS scripts now load all period files (lai.out_*, cmass.out_*, etc.)
+    "part23_ice_cavity_velocities.py": True,
     "part24_lpjg_lai.py":           True,
     "part25_lpjg_carbon.py":        True,
     "part26_lpjg_pft.py":           True,
