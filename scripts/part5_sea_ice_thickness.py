@@ -63,7 +63,7 @@ data = OrderedDict()
 
 def load_parallel(variable,path,remap_resolution,meshpath,mesh_file):
     weight_file = ensure_weight_file(remap_resolution, meshpath, mesh_file)
-    data1 = cdo.copy(input='-setmissval,nan -setctomiss,0 -remap,r'+remap_resolution+','+weight_file+' -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
+    data1 = cdo.copy(input='-setmissval,nan -setctomiss,0 -remap,r'+remap_resolution+','+weight_file+' -selmon,3,9 -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
     np.shape(data1)
     return data1
 
@@ -111,9 +111,9 @@ new_cmap = truncate_colormap(cmo.cm.ice, 0.15, 1)
 
 for seas in ['September','March']:
     if seas == 'March':
-        nseas=2
+        nseas=0
     elif seas == 'September':
-        nseas=8
+        nseas=1
     for hemi in ['SH','NH']:
         for exp_name in input_names:
             
