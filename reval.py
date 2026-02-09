@@ -89,9 +89,9 @@ print(f"{'='*60}\n")
 os.makedirs("logs", exist_ok=True)
 os.makedirs("tmp", exist_ok=True)
 
-# Locate all Python scripts in the "scripts" subfolder
+# Locate all part##_*.py analysis scripts in the "scripts" subfolder
 script_files = natsorted(
-    [f for f in os.listdir("scripts") if f.endswith(".py") and f != "__init__.py"]
+    [f for f in os.listdir("scripts") if f.endswith(".py") and f.startswith("part")]
 )
 
 # Default: Disable all scripts (set to True to enable)
