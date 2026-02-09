@@ -2,7 +2,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from config import *
+from config_loader import *
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 

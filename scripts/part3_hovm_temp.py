@@ -2,7 +2,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from config import *
+from config_loader import *
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -30,19 +30,18 @@ levels = [-1.5, 1.5, 11]
 mapticks = np.arange(levels[0],levels[1],0.1)
 
 
-# Import weight file utility
-from utils import ensure_weight_file
-
-# Ensure weight file exists before processing
-weight_file = ensure_weight_file(remap_resolution, meshpath, mesh_file)
-
-# Load reference data
+# Load reference data using xarray (consistent with main data processing)
 path=reference_path+'/'+variable+'.fesom.'+str(reference_years)+'.nc'
-data_ref = cdo.yearmean(input='-fldmean -setctomiss,0 -remap,r'+remap_resolution+','+weight_file+' -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
-data_ref = np.squeeze(data_ref)
+print(f"Loading reference data from {path}...")
+ds_ref = xr.open_dataset(path, decode_times=True, use_cftime=True)
+var_ref = ds_ref[variable]
 
-import xarray as xr
-import pyfesom2 as pf
+# Replace 0 with NaN and compute mean
+var_ref = var_ref.where(var_ref != 0)
+data_ref = var_ref.mean(dim=['time', 'nod2']).compute().values.astype(np.float32)
+n_ref_depths = len(data_ref)
+ds_ref.close()
+print(f"Reference data shape: {data_ref.shape} ({n_ref_depths} depth levels)")
 
 def compute_global_mean_by_depth(var_data):
     """Compute global mean for each depth level and year using vectorized operations"""
@@ -85,9 +84,12 @@ for exp_path, exp_name in zip(input_paths, input_names):
     
     # Compute global means for each depth level
     print("Computing global means for each depth level...")
-    data[exp_name] = compute_global_mean_by_depth(yearly_data)
+    data_full = compute_global_mean_by_depth(yearly_data)
     
-    print(f"Final shape: {np.shape(data[exp_name])}")
+    # Align depth levels with reference (use first n_ref_depths levels)
+    data[exp_name] = data_full[:, :n_ref_depths]
+    
+    print(f"Final shape: {np.shape(data[exp_name])} (aligned to reference {n_ref_depths} levels)")
     print(f"Completed processing for {exp_name}")
     
     # Close dataset

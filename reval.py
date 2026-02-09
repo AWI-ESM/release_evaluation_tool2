@@ -27,7 +27,9 @@ Key Features:
 """
 
 import os
+import sys
 import subprocess
+import argparse
 from natsort import natsorted
 import shutil
 
@@ -54,8 +56,38 @@ SBATCH_SETTINGS = """\
 # Script Execution         #
 ############################
 
+# Parse command line arguments
+parser = argparse.ArgumentParser(
+    description='AWI-CM3 Release Evaluation Tool - Submit analysis jobs',
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    epilog='''
+Examples:
+  python reval.py --config configs/AWI-CM3-v3.3.py
+  python reval.py --config configs/lpjg_spinup_200y_16c.py
+  python reval.py -c configs/HR_tuning.py
+''')
+parser.add_argument(
+    '-c', '--config',
+    required=True,
+    help='Path to configuration file in configs/ folder (e.g., configs/AWI-CM3-v3.3.py)')
+args = parser.parse_args()
+
+# Validate config file exists
+if not os.path.exists(args.config):
+    print(f"ERROR: Config file not found: {args.config}")
+    print("\nAvailable configs in configs/:")
+    for f in sorted(os.listdir('configs')):
+        if f.endswith('.py'):
+            print(f"  - configs/{f}")
+    sys.exit(1)
+
+config_path = os.path.abspath(args.config)
+print(f"Using configuration: {config_path}")
+print(f"{'='*60}\n")
+
 # Ensure required directories exist
 os.makedirs("logs", exist_ok=True)
+os.makedirs("tmp", exist_ok=True)
 
 # Locate all Python scripts in the "scripts" subfolder
 script_files = natsorted(
@@ -106,6 +138,7 @@ for script, run in SCRIPTS.items():
             f.write(SBATCH_SETTINGS.format(job_name=script))
             f.write("\nsource /home/a/a270092/loadconda.sh\n")  # Load Python module if required
             f.write("\nconda activate reval\n")  # Load Python module if required
+            f.write(f"\nexport REVAL_CONFIG={config_path}\n")  # Pass config file path
             f.write(f"python {script_path}\n")
 
         # Submit job

@@ -37,7 +37,7 @@ edit config.py  # Set model_version, paths, years
 edit reval.py   # Set SCRIPTS = {script: True/False}
 
 # Submit all enabled scripts
-python reval.py
+python reval.py --config configs/AWI-CM3-v3.3.py
 ```
 
 ### Monitor Progress
