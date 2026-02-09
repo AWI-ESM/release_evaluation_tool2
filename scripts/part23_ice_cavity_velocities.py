@@ -364,29 +364,30 @@ def create_streamline_figure(cavity_name, cavity_info, elem_lon, elem_lat, u_dat
     V = griddata((cav_lon[valid], cav_lat[valid]), v_avg[valid], (LON, LAT), method='linear')
     speed = np.sqrt(U**2 + V**2)
     
-    fig, ax = plt.subplots(figsize=(12, 10))
+    proj = ccrs.SouthPolarStereo(central_longitude=cavity_info.get('central_lon', 0))
+    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': proj})
     
     # Background velocity magnitude
     levels = np.linspace(0, 0.1, 21)
-    cf = ax.contourf(LON, LAT, speed, levels=levels, cmap=cmo.cm.speed, extend='max')
+    cf = ax.contourf(LON, LAT, speed, levels=levels, cmap=cmo.cm.speed, extend='max',
+                     transform=ccrs.PlateCarree())
     
     # Streamlines
-    # Replace NaN with 0 for streamplot
     U_clean = np.nan_to_num(U, nan=0)
     V_clean = np.nan_to_num(V, nan=0)
-    speed_clean = np.nan_to_num(speed, nan=0)
     
     strm = ax.streamplot(lon_grid, lat_grid, U_clean, V_clean, 
                          color='white', density=1.5, linewidth=0.8,
-                         arrowsize=1.2, arrowstyle='->')
+                         arrowsize=1.2, arrowstyle='->',
+                         transform=ccrs.PlateCarree())
     
-    ax.set_xlabel('Longitude (°)', fontsize=12)
-    ax.set_ylabel('Latitude (°)', fontsize=12)
     ax.set_title(f"{cavity_info['title']}\nDepth-Integrated Circulation (Year {year})", 
                 fontsize=14, fontweight='bold')
-    ax.set_aspect('equal')
+    ax.coastlines(resolution='50m', color='black', linewidth=0.5)
+    ax.add_feature(cfeature.LAND, facecolor='lightgrey')
+    gl = ax.gridlines(draw_labels=True, linewidth=0.3, alpha=0.5)
     
-    cbar = plt.colorbar(cf, ax=ax, shrink=0.8)
+    cbar = plt.colorbar(cf, ax=ax, shrink=0.8, orientation='horizontal', pad=0.05)
     cbar.set_label('Velocity Magnitude (m/s)', fontsize=11)
     
     plt.tight_layout()
@@ -405,14 +406,6 @@ print("="*60)
 
 for cavity_name, cavity_info in ice_cavities.items():
     try:
-        if has_temp:
-            create_multi_panel_figure(cavity_name, cavity_info, elem_lon, elem_lat,
-                                     u_data, v_data, depths, temp_data,
-                                     node_lon, node_lat)
-        else:
-            create_multi_panel_figure(cavity_name, cavity_info, elem_lon, elem_lat,
-                                     u_data, v_data, depths, None, None, None)
-        
         create_streamline_figure(cavity_name, cavity_info, elem_lon, elem_lat,
                                 u_data, v_data, depths)
     except Exception as e:
@@ -423,11 +416,11 @@ for cavity_name, cavity_info in ice_cavities.items():
 # ===== Summary figure with all cavities =====
 print("\nCreating summary figure...")
 
-fig, axes = plt.subplots(2, 2, figsize=(16, 14))
-axes = axes.flatten()
+fig = plt.figure(figsize=(16, 14))
 
 for idx, (cavity_name, cavity_info) in enumerate(ice_cavities.items()):
-    ax = axes[idx]
+    proj = ccrs.SouthPolarStereo(central_longitude=cavity_info.get('central_lon', 0))
+    ax = fig.add_subplot(2, 2, idx + 1, projection=proj)
     
     mask = select_cavity_elements(cavity_info, elem_lon, elem_lat)
     if np.sum(mask) < 10:
@@ -459,19 +452,20 @@ for idx, (cavity_name, cavity_info) in enumerate(ice_cavities.items()):
                             (LON, LAT), method='linear')
         
         levels = np.linspace(0, 0.1, 21)
-        cf = ax.contourf(LON, LAT, vel_interp, levels=levels, cmap=cmo.cm.speed, extend='max')
+        cf = ax.contourf(LON, LAT, vel_interp, levels=levels, cmap=cmo.cm.speed, extend='max',
+                         transform=ccrs.PlateCarree())
         
         skip = 4
         ax.quiver(LON[::skip, ::skip], LAT[::skip, ::skip],
                   u_interp[::skip, ::skip], v_interp[::skip, ::skip],
-                  scale=1.5, width=0.005, color='black', alpha=0.7)
+                  scale=1.5, width=0.005, color='black', alpha=0.7,
+                  transform=ccrs.PlateCarree())
         
         plt.colorbar(cf, ax=ax, shrink=0.8, label='m/s')
     
-    ax.set_xlabel('Longitude (°)')
-    ax.set_ylabel('Latitude (°)')
+    ax.coastlines(resolution='50m', color='black', linewidth=0.5)
+    ax.add_feature(cfeature.LAND, facecolor='lightgrey')
     ax.set_title(cavity_info['title'], fontsize=12, fontweight='bold')
-    ax.set_aspect('equal')
 
 plt.suptitle(f'Antarctic Ice Shelf Cavity Circulation - Year {year}\nDepth-Integrated Velocity', 
             fontsize=14, fontweight='bold')

@@ -144,10 +144,8 @@ for script, run in SCRIPTS.items():
         # Submit job
         print(f"Submitting {script} as:")
         subprocess.run(["sbatch", job_script])
-        print(f"___________________________")
         destination = f"tmp/{job_script}"
         shutil.move(job_script, destination)
     else:
         print(f"Skipped {script} (disabled)")
-        print(f"___________________________")
 
