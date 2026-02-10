@@ -43,11 +43,10 @@ SBATCH_SETTINGS = """\
 #SBATCH --output=logs/{job_name}.log
 #SBATCH --error=logs/{job_name}.log
 #SBATCH --time=00:20:00
-#SBATCH --mem=256G
 #SBATCH --ntasks=128
 #SBATCH --ntasks-per-node=128
-#SBATCH --partition=compute
-#SBATCH -A ab0246
+#SBATCH --partition=mpp
+#SBATCH -A paleodyn.paleodyn
 """
 
 
@@ -154,7 +153,7 @@ for script, run in SCRIPTS.items():
         # Write the SLURM script
         with open(job_script, "w") as f:
             f.write(SBATCH_SETTINGS.format(job_name=script))
-            f.write("\nsource /home/a/a270092/loadconda.sh\n")  # Load Python module if required
+            f.write(f"\nsource $HOME/loadconda.sh\n")  # Load Python module if required
             f.write("\nconda activate reval\n")  # Load Python module if required
             f.write(f"\nexport REVAL_CONFIG={config_path}\n")  # Pass config file path
             f.write(f"python {script_path}\n")

@@ -81,14 +81,14 @@ for exp_path, exp_name in zip(input_paths, input_names):
             with ProgressBar():
                 datat_chunk = dask.compute(*t, scheduler='threads')
             datat.extend(datat_chunk)
-        data[exp_name][v] = np.squeeze(datat)
+        data[exp_name][v] = np.array([np.squeeze(d) for d in datat])
 
 # Compute Model Mean
 crf_sw_model = OrderedDict()
 crf_sw_model_mean = OrderedDict()
 
 for exp_name in input_names:
-    crf_sw_model[exp_name] = np.squeeze(data[exp_name]['tcc']) 
+    crf_sw_model[exp_name] = data[exp_name]['tcc']
     crf_sw_model_mean[exp_name] = np.mean(crf_sw_model[exp_name], axis=0)
     if len(np.shape(crf_sw_model_mean[exp_name])) > 2:
         crf_sw_model_mean[exp_name] = np.mean(crf_sw_model_mean[exp_name], axis=0)
@@ -104,8 +104,7 @@ crf_sw_satobs_mean, _ = add_cyclic_point(crf_sw_satobs_mean, coord=lon)
 
 # Compute Weighted RMSD & MD
 coslat = np.cos(np.deg2rad(lat))
-wgts = np.sqrt(coslat)[:, np.newaxis]  # Expand to (lat, 1) and match dimensions
-wgts = np.broadcast_to(wgts, crf_sw_model_mean[exp_name].shape)  # Broadcast to (lat, lon)
+wgts = np.sqrt(coslat)
 
 rmsdval = sqrt(mean_squared_error(crf_sw_model_mean[exp_name], crf_sw_satobs_mean, sample_weight=wgts))
 mdval = md(crf_sw_model_mean[exp_name], crf_sw_satobs_mean, wgts)

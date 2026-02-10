@@ -129,6 +129,11 @@ for exp_name in input_names:
     data_diff[exp_name]=data[exp_name]-data_ref_expand
     
 # Prepare coordianates for contourf plot
+if len(years) < 2:
+    print("WARNING: Hovmoller diagram requires at least 2 years of data. Skipping plot.")
+    update_status(SCRIPT_NAME, " Completed")
+    sys.exit(0)
+
 X,Y = np.meshgrid(years,depths[:len(depths)-1])
 
 # Calculate number of rows and columns for plot

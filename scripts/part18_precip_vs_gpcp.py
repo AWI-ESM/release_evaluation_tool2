@@ -78,7 +78,7 @@ for exp_path, exp_name  in zip(input_paths, input_names):
 
         with ProgressBar():
             datat = dask.compute(t)
-        data[exp_name][v] = np.squeeze(datat)
+        data[exp_name][v] = np.array([np.squeeze(d) for d in datat[0]])
         
 data_model_mean = np.mean(data[historic_name]['cp'] + \
                           data[historic_name]['lsp'],axis=0)

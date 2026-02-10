@@ -94,7 +94,7 @@ for variable in variables:
             with ProgressBar():
                 batch_data = dask.compute(*t, scheduler='threads')
             data[exp_name].extend(batch_data)
-        data[exp_name] = np.squeeze(np.array(data[exp_name], dtype=object))
+        data[exp_name] = np.stack(data[exp_name])
 
 
     # -------------------------------

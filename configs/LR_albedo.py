@@ -84,7 +84,7 @@ model_version  = 'awicm3_test_albedo'
 oasis_oifs_grid_name = 'A096'
 
 #Spinup
-spinup_path    = '/work/bb1469/a270092/runtime/awicm3-develop/TUNE42PI_FES27/outdata/'
+spinup_path    = '/albedo/work/user/jstreffi/runtime/awiesm3-develop/test_collect_txt_05/outdata/'
 spinup_name    = model_version+'_spinup'
 spinup_start   = 1900
 spinup_end     = 1900
@@ -106,23 +106,23 @@ historic_end   = spinup_end
 reanalysis             = 'ERA5'
 remap_resolution       = '512x256'
 dpi                    = 300
-historic_last25y_start = historic_end-25
+historic_last25y_start = historic_start
 historic_last25y_end   = historic_end
 status_csv             = "log/status.csv"
 
 #Mesh
-mesh_name      = 'CORE2'
+mesh_name      = 'CORE3'
 grid_name      = 'TCO95'
-meshpath       = '/albedo/pool/fesom2/core2/'
+meshpath       = '/albedo/pool/fesom2/core3/'
 mesh_file      = 'mesh.nc'
 griddes_file   = 'mesh.nc'
 abg            = [0, 0, 0]
-reference_path = '/albedo/work/user/jstreffi/climatologies/CORE2/'
+reference_path = '/albedo/work/user/jstreffi/climatologies/CORE3/'
 reference_name = 'clim'
 reference_years= 1958
 accumulation_period = 21600
 
-observation_path = '/work/ab0246/a270092/obs/'
+observation_path = '/albedo/work/user/jstreffi/obs/'
 
 tool_path      = os.getcwd()
 out_path       = tool_path+'/output/'+model_version+'/'

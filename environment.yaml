@@ -4,7 +4,7 @@ channels:
 dependencies:
   - python
   - pip
-  - pandas
+  - pandas<3.0
   - numpy
   - netcdf4
   - joblib
@@ -26,5 +26,6 @@ dependencies:
   - eofs
   - scikit-learn
   - natsort
+  - setuptools<71
   - pip:
     - pyfesom2

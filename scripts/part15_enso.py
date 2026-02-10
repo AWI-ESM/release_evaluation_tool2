@@ -54,6 +54,11 @@ figsize=(10, 5)
 # load mesh and data
 mesh = pf.load_mesh(meshpath, abg=abg, 
                     usepickle=True, usejoblib=False)
+if len(years) < 3:
+    print("WARNING: ENSO analysis requires at least 3 years of data. Skipping.")
+    update_status(SCRIPT_NAME, " Completed")
+    sys.exit(0)
+
 t1 = time.time()
 
 data_raw = pf.get_data(input_paths[0], 'sst', years, mesh, how=None, compute=False, silent=False)

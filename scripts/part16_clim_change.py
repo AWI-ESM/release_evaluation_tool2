@@ -160,8 +160,8 @@ if len(data[var]) == 0 or len(ctrl_data[var]) == 0:
     
     
 # extract data
-hist = np.squeeze(np.vstack(np.squeeze(data[var]).flatten()-273.15))
-pict = np.squeeze(np.vstack(np.squeeze(ctrl_data[var]).flatten()-273.15))
+hist = np.atleast_1d(data[var].flatten() - 273.15)
+pict = np.atleast_1d(ctrl_data[var].flatten() - 273.15)
 pict = pict[0:len(hist)]
 
 hist = hist - np.mean(pict)
@@ -176,6 +176,11 @@ data_ref = cdo.copy(input=str(path),returnArray='tas_mean')
 data_ref = np.squeeze(data_ref)
 data_ref = data_ref[0:len(hist)]
 
+
+if len(hist) < 2:
+    print("WARNING: Climate change analysis requires at least 2 years of data. Skipping.")
+    update_status(SCRIPT_NAME, " Completed")
+    sys.exit(0)
 
 # calculate linear regression
 res = linregress(years,pict)
@@ -371,7 +376,7 @@ for var in ['precip','temp']:
 
             with ProgressBar():
                 datat = dask.compute(*t, scheduler='threads')
-            data[exp_name][v] = np.squeeze(datat)
+            data[exp_name][v] = np.array([np.squeeze(d) for d in datat])
 
     paths = []
     for exp_path, exp_name  in zip(ctrl_input_paths, ctrl_input_names):
@@ -388,7 +393,7 @@ for var in ['precip','temp']:
 
             with ProgressBar():
                 datat = dask.compute(*t, scheduler='threads')
-            data_ctrl[exp_name][v] = np.squeeze(datat)
+            data_ctrl[exp_name][v] = np.array([np.squeeze(d) for d in datat])
             
 def resample(xyobs,n,m):
     xstar = []

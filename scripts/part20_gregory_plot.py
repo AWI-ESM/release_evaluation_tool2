@@ -344,8 +344,9 @@ if len(temp_vals_clean) > 1:
     print(f"  Temperature: {final_temp:.3f} °C")
     print(f"  Energy imbalance: {final_imbalance:.3f} W/m²")
 else:
-    print("ERROR: Insufficient data for analysis")
-    sys.exit(1)
+    print("WARNING: Insufficient data for analysis (need >1 year). Skipping plot.")
+    update_status(SCRIPT_NAME, " Completed")
+    sys.exit(0)
 
 # -----------------------------------------------------------------------------
 # Create plot

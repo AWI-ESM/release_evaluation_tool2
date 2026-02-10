@@ -140,14 +140,14 @@ for variable in variables:
 
         with ProgressBar():
             datat = dask.compute(*t, scheduler='threads')
-        data[exp_name][variable] = np.squeeze(datat)
+        data[exp_name][variable] = np.array([np.squeeze(d) for d in datat])
         
     data_model = OrderedDict()
     data_model_mean = OrderedDict()
 
 
     for exp_name in input_names:
-        data_model[exp_name] = np.mean(data[exp_name][variable],axis=0) 
+        data_model[exp_name] = np.mean(data[exp_name][variable],axis=0)
         data_model_mean[exp_name] = data_model[exp_name]
     data_reanalysis_mean = np.squeeze(np.fliplr(ERA5_CRF))
 

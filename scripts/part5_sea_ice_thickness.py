@@ -79,7 +79,7 @@ for exp_path, exp_name  in zip(input_paths, input_names):
 
     with ProgressBar():
         datat = dask.compute(t)
-    data[exp_name] = np.squeeze(datat)
+    data[exp_name] = np.array([np.squeeze(d) for d in datat[0]])
 
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
     new_cmap = colors.LinearSegmentedColormap.from_list(
