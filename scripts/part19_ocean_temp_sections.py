@@ -2,7 +2,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from config_loader import *
+from bg_routines.config_loader import *
 
 SCRIPT_NAME = os.path.basename(__file__)
 print(SCRIPT_NAME)

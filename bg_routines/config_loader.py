@@ -6,7 +6,7 @@ Config is resolved in this order:
   2. Environment variable:   export REVAL_CONFIG=configs/HR_tuning.py
 
 Usage in scripts:
-    from config_loader import *
+    from bg_routines.config_loader import *
 """
 
 import os

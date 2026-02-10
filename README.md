@@ -30,14 +30,8 @@ cd /work/ab0246/a270092/software/release_evaluation_tool2
 source ~/loadconda.sh
 conda activate reval
 
-# Configure simulation paths
-edit config.py  # Set model_version, paths, years
-
-# Enable/disable scripts
-edit reval.py   # Set SCRIPTS = {script: True/False}
-
-# Submit all enabled scripts
-python reval.py --config configs/AWI-CM3-v3.3.py
+# Submit all enabled scripts with a config file
+python reval.py -c configs/AWI-CM3-v3.3.py
 ```
 
 ### Monitor Progress
@@ -60,7 +54,6 @@ cat logs/status.csv
 release_evaluation_tool2/
 ├── README.md              # This file
 ├── reval.py               # Main submission script
-├── config.py              # Central configuration (imported by configs/)
 ├── environment.yaml       # Conda dependencies
 │
 ├── configs/               # Experiment-specific configurations
@@ -77,7 +70,8 @@ release_evaluation_tool2/
 │   ├── part23_ice_cavity_velocities.py
 │   └── ...
 │
-├── bg_routines/           # Helper functions
+├── bg_routines/           # Helper functions (do not modify)
+│   ├── config_loader.py
 │   ├── update_status.py
 │   ├── sub_fesom_mesh.py
 │   ├── sub_fesom_data.py
@@ -97,11 +91,10 @@ release_evaluation_tool2/
 
 ## Configuration System
 
-### Main Config (`config.py`)
-Acts as a pointer to experiment-specific configs. Simply imports from `configs/` directory:
+Configuration is passed via the `-c` flag when running `reval.py`. Users only need to create or edit files in the `configs/` directory. The config loader in `bg_routines/` should not be modified.
 
-```python
-from configs.AWI-CM3-v3.3 import *  # or CORE3_tuning, HR_tuning, etc.
+```bash
+python reval.py -c configs/AWI-CM3-v3.3.py
 ```
 
 ### Experiment Configs (`configs/*.py`)
@@ -158,7 +151,7 @@ Each script follows this template:
 ```python
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from config import *
+from bg_routines.config_loader import *
 
 SCRIPT_NAME = os.path.basename(__file__)
 update_status(SCRIPT_NAME, " Started")
@@ -222,10 +215,7 @@ except Exception as e:
 ## Workflow
 
 ### 1. Configure Experiment
-Edit `config.py` to point to desired experiment config:
-```python
-from configs.AWI-CM3-v3.3 import *
-```
+Create or choose a config file in `configs/` with your simulation paths and settings.
 
 ### 2. Enable Scripts
 Edit `reval.py` to enable/disable specific analyses:
@@ -240,7 +230,7 @@ SCRIPTS.update({
 
 ### 3. Submit Jobs
 ```bash
-python reval.py
+python reval.py -c configs/AWI-CM3-v3.3.py
 ```
 
 This creates individual SLURM scripts (`slurm_part##_*.sh`) and submits them to the compute partition.
@@ -385,7 +375,7 @@ If you use this tool, please cite:
 
 For questions or issues:
 - Check logs in `logs/` directory
-- Review data paths in `config.py` and experiment configs
+- Review data paths in experiment configs under `configs/`
 - Consult script-specific comments in `scripts/`
 - Contact: Jan Streffing (jan.streffing@awi.de)
 
