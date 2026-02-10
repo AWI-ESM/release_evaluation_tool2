@@ -63,14 +63,33 @@ parser = argparse.ArgumentParser(
     epilog='''
 Examples:
   python reval.py --config configs/AWI-CM3-v3.3.py
-  python reval.py --config configs/lpjg_spinup_200y_16c.py
-  python reval.py -c configs/HR_tuning.py
+  python reval.py --status
 ''')
 parser.add_argument(
     '-c', '--config',
-    required=True,
     help='Path to configuration file in configs/ folder (e.g., configs/AWI-CM3-v3.3.py)')
+parser.add_argument(
+    '-s', '--status',
+    action='store_true',
+    help='Show status of all scripts and exit')
 args = parser.parse_args()
+
+# Handle --status
+if args.status:
+    from bg_routines.update_status import get_all_status
+    status = get_all_status()
+    if not status:
+        print("No status information found yet.")
+    else:
+        print(f"{'Script':<40} {'Status'}")
+        print("-" * 70)
+        for script, stat in status.items():
+            print(f"{script:<40} {stat}")
+    sys.exit(0)
+
+# Require --config for job submission
+if not args.config:
+    parser.error("--config is required when submitting jobs")
 
 # Validate config file exists
 if not os.path.exists(args.config):

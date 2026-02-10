@@ -86,10 +86,11 @@ for exp_path, exp_name in zip(input_paths, input_names):
     print("Computing global means for each depth level...")
     data_full = compute_global_mean_by_depth(yearly_data)
     
-    # Align depth levels with reference (use first n_ref_depths levels)
-    data[exp_name] = data_full[:, :n_ref_depths]
+    # Align depth levels with reference (use minimum of both)
+    n_common = min(n_ref_depths, data_full.shape[1])
+    data[exp_name] = data_full[:, :n_common]
     
-    print(f"Final shape: {np.shape(data[exp_name])} (aligned to reference {n_ref_depths} levels)")
+    print(f"Final shape: {np.shape(data[exp_name])} (aligned to {n_common} common levels)")
     print(f"Completed processing for {exp_name}")
     
     # Close dataset
@@ -112,8 +113,9 @@ print(f"Expected: ({len(years)}, {len(depths)-1})")
 # Data is already in the correct format - no reshaping needed!
 # Shape is (years, depths) which is what we need for the Hovmöller plot
 
-# Expand reference data
-data_ref_expand = np.tile(data_ref, (np.shape(data[exp_name])[0], 1))
+# Align reference to common depth levels and expand
+n_common = np.shape(data[exp_name])[1]
+data_ref_expand = np.tile(data_ref[:n_common], (np.shape(data[exp_name])[0], 1))
 
 # Debugging print to verify no NoneType issues
 print(f"Final data shape: {np.shape(data[exp_name])}, dtype: {data[exp_name].dtype}")
