@@ -3,13 +3,21 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
-from scipy.interpolate import griddata
+from bg_routines.cavity_mask import check_use_cavity, get_cavity_element_mask, get_cavity_node_mask
+from matplotlib.collections import PolyCollection, LineCollection
+from matplotlib.tri import Triangulation, LinearTriInterpolator
 
 SCRIPT_NAME = os.path.basename(__file__)
 print(SCRIPT_NAME)
 
 # Mark as started
 update_status(SCRIPT_NAME, " Started")
+
+# Check if this simulation uses ice shelf cavities
+if not check_use_cavity(spinup_path):
+    print("Simulation was not run with ice shelf cavities. Skipping.")
+    update_status(SCRIPT_NAME, " Completed (no cavities)")
+    sys.exit(0)
 
 # Ice Shelf Cavity Velocity Visualization
 # Following standard oceanographic visualization practices:
@@ -96,36 +104,43 @@ print(f"Velocity shape: {u_data.shape}, Depths: {len(depths)}")
 elem_lon = mesh.x2[mesh.elem].mean(axis=1)
 elem_lat = mesh.y2[mesh.elem].mean(axis=1)
 
+# 0-360 centroids for dateline-crossing regions (avoids wrong mean at ±180°)
+x2_360 = np.where(mesh.x2 < 0, mesh.x2 + 360, mesh.x2)
+elem_lon_360 = x2_360[mesh.elem].mean(axis=1)
+
 # Node coordinates (for temperature on nodes)
 node_lon = mesh.x2
 node_lat = mesh.y2
 
-def select_cavity_elements(cavity_info, lon_arr, lat_arr):
-    """Select elements/nodes within cavity bounding box"""
+# Load cavity masks
+print("Loading cavity masks...")
+elem_is_cavity = get_cavity_element_mask(mesh, meshpath)
+node_is_cavity = get_cavity_node_mask(mesh, meshpath)
+
+def select_cavity_elements(cavity_info, lon_arr, lat_arr, cavity_mask=None):
+    """Select elements/nodes within cavity bounding box that are inside the cavity."""
     if cavity_info['cross_dateline']:
-        lon_mask = (lon_arr >= cavity_info['lon_min']) | (lon_arr <= cavity_info['lon_max'])
+        # Use 0-360 range for proper dateline handling
+        lon_360 = np.where(lon_arr < 0, lon_arr + 360, lon_arr)
+        lon_min_360 = cavity_info['lon_min'] if cavity_info['lon_min'] >= 0 else cavity_info['lon_min'] + 360
+        lon_max_360 = cavity_info['lon_max'] if cavity_info['lon_max'] >= 0 else cavity_info['lon_max'] + 360
+        lon_mask = (lon_360 >= lon_min_360) & (lon_360 <= lon_max_360)
     else:
         lon_mask = (lon_arr >= cavity_info['lon_min']) & (lon_arr <= cavity_info['lon_max'])
     lat_mask = (lat_arr >= cavity_info['lat_min']) & (lat_arr <= cavity_info['lat_max'])
-    return lon_mask & lat_mask
+    bbox_mask = lon_mask & lat_mask
+    if cavity_mask is not None:
+        return bbox_mask & cavity_mask
+    return bbox_mask
 
-def compute_depth_integrated_velocity(u, v, depths, max_depth=None):
-    """Compute depth-integrated (vertically averaged) velocity"""
+def compute_depth_integrated_velocity(u, v, depths):
+    """Compute depth-integrated (vertically averaged) velocity."""
     layer_thick = np.diff(np.concatenate([[0], depths]))
-    
-    if max_depth is not None:
-        valid_layers = depths <= max_depth
-        layer_thick = layer_thick[valid_layers]
-        u = u[valid_layers, :]
-        v = v[valid_layers, :]
-    
-    # Weighted average by layer thickness
     weights = layer_thick[:, np.newaxis]
     total_depth = np.nansum(weights * ~np.isnan(u), axis=0)
-    
+    total_depth[total_depth == 0] = np.nan
     u_avg = np.nansum(u * weights, axis=0) / total_depth
     v_avg = np.nansum(v * weights, axis=0) / total_depth
-    
     return u_avg, v_avg
 
 def create_multi_panel_figure(cavity_name, cavity_info, elem_lon, elem_lat, 
@@ -141,8 +156,8 @@ def create_multi_panel_figure(cavity_name, cavity_info, elem_lon, elem_lat,
     
     print(f"\nProcessing {cavity_name}...")
     
-    # Velocity is on elements
-    mask = select_cavity_elements(cavity_info, elem_lon, elem_lat)
+    # Velocity is on elements - filter by bounding box AND cavity mask
+    mask = select_cavity_elements(cavity_info, elem_lon, elem_lat, cavity_mask=elem_is_cavity)
     n_elements = np.sum(mask)
     print(f"  Found {n_elements} elements")
     
@@ -158,7 +173,7 @@ def create_multi_panel_figure(cavity_name, cavity_info, elem_lon, elem_lat,
     
     # Temperature is on nodes - need separate mask
     if temp_data is not None and node_lon is not None:
-        node_mask = select_cavity_elements(cavity_info, node_lon, node_lat)
+        node_mask = select_cavity_elements(cavity_info, node_lon, node_lat, cavity_mask=node_is_cavity)
         cav_temp = temp_data[:, node_mask]
         cav_temp_lon = node_lon[node_mask]
         cav_temp_lat = node_lat[node_mask]
@@ -328,18 +343,31 @@ def create_multi_panel_figure(cavity_name, cavity_info, elem_lon, elem_lat,
     
     return ofile
 
-def create_streamline_figure(cavity_name, cavity_info, elem_lon, elem_lat, u_data, v_data, depths):
-    """Create streamline visualization showing circulation patterns"""
+def build_triangle_verts(elem_indices, x2, y2):
+    """Build triangle vertex array from element indices and node coordinates."""
+    verts = np.stack([
+        np.column_stack([x2[elem_indices[:, 0]], y2[elem_indices[:, 0]]]),
+        np.column_stack([x2[elem_indices[:, 1]], y2[elem_indices[:, 1]]]),
+        np.column_stack([x2[elem_indices[:, 2]], y2[elem_indices[:, 2]]]),
+    ], axis=1)  # (n_elem, 3, 2)
+    return verts
+
+def create_cavity_figure(cavity_name, cavity_info, elem_lon, elem_lat, u_data, v_data, depths, ax=None):
+    """Create cavity velocity plot using actual mesh triangles (PolyCollection)."""
     
-    print(f"\nCreating streamline plot for {cavity_name}...")
+    print(f"\nCreating cavity plot for {cavity_name}...")
     
-    mask = select_cavity_elements(cavity_info, elem_lon, elem_lat)
+    cross_dl = cavity_info.get('cross_dateline', False)
+    
+    # For dateline-crossing cavities, use 0-360 centroids for selection
+    sel_lon = elem_lon_360 if cross_dl else elem_lon
+    mask = select_cavity_elements(cavity_info, sel_lon, elem_lat, cavity_mask=elem_is_cavity)
     n_elements = np.sum(mask)
+    print(f"  {n_elements} cavity elements in region")
     
     if n_elements < 10:
         return None
     
-    cav_lon = elem_lon[mask]
     cav_lat = elem_lat[mask]
     cav_u = u_data[:, mask]
     cav_v = v_data[:, mask]
@@ -348,56 +376,146 @@ def create_streamline_figure(cavity_name, cavity_info, elem_lon, elem_lat, u_dat
     u_avg, v_avg = compute_depth_integrated_velocity(cav_u, cav_v, depths)
     vel_mag = np.sqrt(u_avg**2 + v_avg**2)
     
-    # Create regular grid
-    n_grid = 80
-    lon_grid = np.linspace(cav_lon.min(), cav_lon.max(), n_grid)
-    lat_grid = np.linspace(cav_lat.min(), cav_lat.max(), n_grid)
-    LON, LAT = np.meshgrid(lon_grid, lat_grid)
-    
     valid = ~np.isnan(vel_mag)
     if np.sum(valid) < 20:
-        print(f"  Not enough valid data for streamlines")
+        print(f"  Not enough valid data")
         return None
     
-    # Interpolate to grid
-    U = griddata((cav_lon[valid], cav_lat[valid]), u_avg[valid], (LON, LAT), method='linear')
-    V = griddata((cav_lon[valid], cav_lat[valid]), v_avg[valid], (LON, LAT), method='linear')
-    speed = np.sqrt(U**2 + V**2)
+    # Build triangle vertices for cavity elements
+    # For dateline-crossing cavities, use 0-360 node longitudes
+    elem_idx = np.where(mask)[0]
+    node_x = x2_360 if cross_dl else mesh.x2
+    tri_verts = build_triangle_verts(mesh.elem[elem_idx], node_x, mesh.y2)
     
-    proj = ccrs.SouthPolarStereo(central_longitude=cavity_info.get('central_lon', 0))
-    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': proj})
+    # Filter out triangles spanning >180° longitude (global wrapping artifacts)
+    lon_range = tri_verts[:, :, 0].max(axis=1) - tri_verts[:, :, 0].min(axis=1)
+    good = (lon_range < 180) & valid
     
-    # Background velocity magnitude
-    levels = np.linspace(0, 0.1, 21)
-    cf = ax.contourf(LON, LAT, speed, levels=levels, cmap=cmo.cm.speed, extend='max',
-                     transform=ccrs.PlateCarree())
+    standalone = ax is None
+    if standalone:
+        proj = ccrs.SouthPolarStereo(central_longitude=cavity_info.get('central_lon', 0))
+        fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': proj})
     
-    # Streamlines
-    U_clean = np.nan_to_num(U, nan=0)
-    V_clean = np.nan_to_num(V, nan=0)
+    # Plot triangles colored by velocity magnitude
+    collection = PolyCollection(
+        tri_verts[good],
+        array=vel_mag[good],
+        cmap=cmo.cm.speed,
+        edgecolors='none',
+        linewidths=0,
+        transform=ccrs.PlateCarree(),
+    )
+    collection.set_clim(0, 0.1)
+    ax.add_collection(collection)
     
-    strm = ax.streamplot(lon_grid, lat_grid, U_clean, V_clean, 
-                         color='white', density=1.5, linewidth=0.8,
-                         arrowsize=1.2, arrowstyle='->',
-                         transform=ccrs.PlateCarree())
+    # Trace streamlines on the unstructured triangulation
+    cav_lon = elem_lon_360[mask] if cross_dl else elem_lon[mask]
     
-    ax.set_title(f"{cavity_info['title']}\nDepth-Integrated Circulation (Year {year})", 
-                fontsize=14, fontweight='bold')
+    # Build local triangulation from good elements only
+    good_global_elem = mesh.elem[elem_idx[good]]
+    local_nodes = np.unique(good_global_elem)
+    global_to_local = {g: l for l, g in enumerate(local_nodes)}
+    local_elem = np.vectorize(global_to_local.get)(good_global_elem)
+    local_x = node_x[local_nodes]
+    local_y = mesh.y2[local_nodes]
+    
+    # Average element values to nodes
+    u_node = np.zeros(len(local_nodes))
+    v_node = np.zeros(len(local_nodes))
+    count = np.zeros(len(local_nodes))
+    good_u = u_avg[good]
+    good_v = v_avg[good]
+    for ie in range(len(local_elem)):
+        for k in range(3):
+            ln = local_elem[ie, k]
+            u_node[ln] += good_u[ie]
+            v_node[ln] += good_v[ie]
+            count[ln] += 1
+    count[count == 0] = 1
+    u_node /= count
+    v_node /= count
+    
+    # Build triangulation and interpolators
+    try:
+        tri = Triangulation(local_x, local_y, local_elem)
+        interp_u = LinearTriInterpolator(tri, u_node)
+        interp_v = LinearTriInterpolator(tri, v_node)
+    except Exception as e:
+        print(f"  WARNING: Could not build triangulation for streamlines: {e}")
+        tri = None
+    
+    # Integrate streamlines on the triangulation
+    if tri is not None:
+        # Seed from element centroids, enforce minimum spacing
+        all_cx = cav_lon[good]
+        all_cy = cav_lat[good]
+        # Shuffle to avoid spatial bias
+        rng = np.random.RandomState(42)
+        order = rng.permutation(len(all_cx))
+        min_dist = 0.5  # degrees — minimum spacing between seeds
+        seeds = []
+        for i in order:
+            sx, sy = all_cx[i], all_cy[i]
+            too_close = False
+            for px, py in seeds:
+                if (sx - px)**2 + (sy - py)**2 < min_dist**2:
+                    too_close = True
+                    break
+            if not too_close:
+                seeds.append((sx, sy))
+            if len(seeds) >= 80:
+                break
+        
+        dt = 0.15  # step size in degrees (smaller = smoother)
+        max_steps = 150
+        lines = []
+        for sx, sy in seeds:
+            pts = []
+            # Integrate backward then forward for one continuous line
+            for direction in [-1, 1]:
+                seg = [(sx, sy)] if direction == 1 else []
+                x, y = sx, sy
+                for _ in range(max_steps):
+                    ui = float(interp_u(x, y))
+                    vi = float(interp_v(x, y))
+                    if np.isnan(ui) or np.isnan(vi):
+                        break
+                    spd = np.sqrt(ui**2 + vi**2)
+                    if spd < 1e-8:
+                        break
+                    x += direction * dt * ui / spd
+                    y += direction * dt * vi / spd
+                    seg.append((x, y))
+                if direction == -1:
+                    pts = list(reversed(seg))
+                else:
+                    pts.extend(seg)
+            if len(pts) > 5:
+                lines.append(pts)
+        
+        if lines:
+            lc = LineCollection(lines, colors='white', linewidths=0.8, alpha=0.8,
+                                transform=ccrs.PlateCarree())
+            ax.add_collection(lc)
+    
     ax.coastlines(resolution='50m', color='black', linewidth=0.5)
     ax.add_feature(cfeature.LAND, facecolor='lightgrey')
-    gl = ax.gridlines(draw_labels=True, linewidth=0.3, alpha=0.5)
+    ax.autoscale_view()
     
-    cbar = plt.colorbar(cf, ax=ax, shrink=0.8, orientation='horizontal', pad=0.05)
-    cbar.set_label('Velocity Magnitude (m/s)', fontsize=11)
+    if standalone:
+        ax.set_title(f"{cavity_info['title']}\nDepth-Integrated Circulation (Year {year})", 
+                    fontsize=14, fontweight='bold')
+        gl = ax.gridlines(draw_labels=True, linewidth=0.3, alpha=0.5)
+        cbar = plt.colorbar(collection, ax=ax, shrink=0.8, orientation='horizontal', pad=0.05)
+        cbar.set_label('Velocity Magnitude (m/s)', fontsize=11)
+        plt.tight_layout()
+        
+        ofile = out_path + f'ice_cavity_{cavity_name}_streamlines.png'
+        plt.savefig(ofile, dpi=dpi, bbox_inches='tight')
+        plt.close()
+        print(f"  Saved: {ofile}")
     
-    plt.tight_layout()
-    
-    ofile = out_path + f'ice_cavity_{cavity_name}_streamlines.png'
-    plt.savefig(ofile, dpi=dpi, bbox_inches='tight')
-    plt.close()
-    print(f"  Saved: {ofile}")
-    
-    return ofile
+    return collection
 
 # ===== Main Processing =====
 print("\n" + "="*60)
@@ -406,8 +524,8 @@ print("="*60)
 
 for cavity_name, cavity_info in ice_cavities.items():
     try:
-        create_streamline_figure(cavity_name, cavity_info, elem_lon, elem_lat,
-                                u_data, v_data, depths)
+        create_cavity_figure(cavity_name, cavity_info, elem_lon, elem_lat,
+                             u_data, v_data, depths)
     except Exception as e:
         print(f"Error processing {cavity_name}: {e}")
         import traceback
@@ -422,52 +540,19 @@ for idx, (cavity_name, cavity_info) in enumerate(ice_cavities.items()):
     proj = ccrs.SouthPolarStereo(central_longitude=cavity_info.get('central_lon', 0))
     ax = fig.add_subplot(2, 2, idx + 1, projection=proj)
     
-    mask = select_cavity_elements(cavity_info, elem_lon, elem_lat)
-    if np.sum(mask) < 10:
+    collection = create_cavity_figure(cavity_name, cavity_info, elem_lon, elem_lat,
+                                      u_data, v_data, depths, ax=ax)
+    
+    if collection is not None:
+        plt.colorbar(collection, ax=ax, shrink=0.8, label='m/s')
+    else:
         ax.set_title(f"{cavity_info['title']}\n(Insufficient data)", fontsize=11)
         ax.axis('off')
         continue
     
-    cav_lon = elem_lon[mask]
-    cav_lat = elem_lat[mask]
-    cav_u = u_data[:, mask]
-    cav_v = v_data[:, mask]
-    
-    u_avg, v_avg = compute_depth_integrated_velocity(cav_u, cav_v, depths)
-    vel_mag = np.sqrt(u_avg**2 + v_avg**2)
-    
-    # Grid interpolation
-    n_grid = 60
-    lon_grid = np.linspace(cav_lon.min(), cav_lon.max(), n_grid)
-    lat_grid = np.linspace(cav_lat.min(), cav_lat.max(), n_grid)
-    LON, LAT = np.meshgrid(lon_grid, lat_grid)
-    
-    valid = ~np.isnan(vel_mag)
-    if np.sum(valid) > 10:
-        vel_interp = griddata((cav_lon[valid], cav_lat[valid]), vel_mag[valid],
-                              (LON, LAT), method='linear')
-        u_interp = griddata((cav_lon[valid], cav_lat[valid]), u_avg[valid],
-                            (LON, LAT), method='linear')
-        v_interp = griddata((cav_lon[valid], cav_lat[valid]), v_avg[valid],
-                            (LON, LAT), method='linear')
-        
-        levels = np.linspace(0, 0.1, 21)
-        cf = ax.contourf(LON, LAT, vel_interp, levels=levels, cmap=cmo.cm.speed, extend='max',
-                         transform=ccrs.PlateCarree())
-        
-        skip = 4
-        ax.quiver(LON[::skip, ::skip], LAT[::skip, ::skip],
-                  u_interp[::skip, ::skip], v_interp[::skip, ::skip],
-                  scale=1.5, width=0.005, color='black', alpha=0.7,
-                  transform=ccrs.PlateCarree())
-        
-        plt.colorbar(cf, ax=ax, shrink=0.8, label='m/s')
-    
-    ax.coastlines(resolution='50m', color='black', linewidth=0.5)
-    ax.add_feature(cfeature.LAND, facecolor='lightgrey')
     ax.set_title(cavity_info['title'], fontsize=12, fontweight='bold')
 
-plt.suptitle(f'Antarctic Ice Shelf Cavity Circulation - Year {year}\nDepth-Integrated Velocity', 
+plt.suptitle(f'Antarctic Ice Shelf Cavity Circulation - Year {year}\nSub-Ice Shelf Velocity', 
             fontsize=14, fontweight='bold')
 plt.tight_layout()
 
