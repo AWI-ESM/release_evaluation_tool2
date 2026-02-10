@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Add the parent directory to sys.path and load config
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from config_loader import *
+from bg_routines.config_loader import *
 
 import fcntl
 import time
