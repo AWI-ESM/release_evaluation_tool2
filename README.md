@@ -10,7 +10,7 @@ The Release Evaluation Tool (reval) is designed to streamline the assessment of 
 - **Observation comparisons** against ERA5, CERES, MODIS, GPCP, HadISST, and more
 - **Publication-ready plots** with consistent formatting and metadata
 
-Originally developed for [Streffing et al. (2022, GMD)](https://doi.org/10.5194/gmd-15-6399-2022) and extended for [Streffing et al. (2025, ESD)](https://doi.org/10.5194/esd-16-1103-2025).
+Originally developed for [Streffing et al. (2022, GMD)](https://doi.org/10.5194/gmd-15-6399-2022) and extended for [Moon et al. (2025, ESD)](https://doi.org/10.5194/esd-16-1103-2025).
 
 ---
 
