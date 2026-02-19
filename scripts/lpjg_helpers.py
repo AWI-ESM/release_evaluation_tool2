@@ -11,6 +11,7 @@ from tqdm import tqdm
 from scipy.interpolate import griddata
 from scipy.spatial import cKDTree
 from cartopy.io import shapereader
+import os
 
 # Cache for land mask to avoid recomputing
 _land_mask_cache = {}
@@ -50,13 +51,22 @@ def read_lpjg_output(base_path, filename, year):
         if d.exists():
             lpjg_dir = d
             break
+
+    # check for time-period folder:
+    contents = os.listdir(lpjg_dir)
+    timefolder = [folder for folder in contents if str(year) in folder]
+    if timefolder:
+        lpjg_dir = f"{lpjg_dir}/{timefolder[0]}/"
     
     if lpjg_dir is None:
         print(f"Warning: Could not find lpj_guess directory under {base_path}")
         return None
     
     # Find all run directories (run1, run2, run3, etc.)
-    run_dirs = sorted(glob.glob(str(lpjg_dir / "run*")))
+    if isinstance(lpjg_dir, str):
+        run_dirs = sorted(glob.glob(f"{lpjg_dir}/run*"))
+    else:
+        run_dirs = sorted(glob.glob(str(lpjg_dir / "run*")))
     if not run_dirs:
         print(f"Warning: No run directories found in {lpjg_dir}")
         return None
