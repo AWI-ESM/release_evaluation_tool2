@@ -11,7 +11,8 @@ print(SCRIPT_NAME)
 update_status(SCRIPT_NAME, " Started")
 
 # Plot all masks from masks.nc file
-masks_file = '/work/bb1469/a270092/runtime/awicm3-develop/CORE3_SPIN_900s/run_20400101-20491231/work/masks.nc'
+# Read path from config.py
+#masks_file = '/work/bb1469/a270092/runtime/awicm3-develop/CORE3_SPIN_900s/run_20400101-20491231/work/masks.nc'
 
 print(f"Loading masks from: {masks_file}")
 ds = xr.open_dataset(masks_file)
@@ -29,6 +30,10 @@ grid_configs = {
     'RnfA': {'x_dim': 'x', 'y_dim': 'y', 'lon': None, 'lat': None, 'title': 'Runoff to Atmosphere'},
     'RnfO': {'x_dim': 'x', 'y_dim': 'y', 'lon': None, 'lat': None, 'title': 'Runoff to Ocean'},
     'feom': {'x_dim': 'x_feom', 'y_dim': 'y_feom', 'lon': None, 'lat': None, 'title': 'FESOM Ocean Mesh'},
+    'A320': {'x_dim': 'x_A320', 'y_dim': 'y_A320', 'lon': 'A320.lon', 'lat': 'A320.lat', 'title': 'Atmosphere Grid (A320)'},
+    'L320': {'x_dim': 'x_L320', 'y_dim': 'y_L320', 'lon': 'L320.lon', 'lat': 'L320.lat', 'title': 'Land Grid (L320)'},
+    'R320': {'x_dim': 'x_R320', 'y_dim': 'y_R320', 'lon': 'R320.lon', 'lat': 'R320.lat', 'title': 'Runoff Grid (R320)'},
+    'TCO319-land': {'x_dim': 'x_TCO319-land', 'y_dim': 'y_TCO319-land', 'lon': 'TCO319-land.lon', 'lat': 'TCO319-land.lat', 'title': 'TCO319 Land Grid'},
 }
 
 # Create figure with subplots for all masks
@@ -139,8 +144,8 @@ for mask_var in ['RnfA.msk', 'RnfO.msk']:
         colors = ['navy', 'crimson']
         cmap = mpl.colors.ListedColormap(colors)
         
-        im = ax.pcolormesh(lon2d, lat2d, mask_data, cmap=cmap, 
-                          transform=ccrs.PlateCarree(), shading='auto')
+        #im = ax.pcolormesh(lon2d, lat2d, mask_data, cmap=cmap, transform=ccrs.PlateCarree(), shading='auto')
+        im = ax.contourf(lon2d, lat2d, mask_data, cmap=cmap, transform=ccrs.PlateCarree(), shading='auto')#, transform_first=True)
         
         ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
         ax.gridlines(draw_labels=True, linewidth=0.3, alpha=0.5)
