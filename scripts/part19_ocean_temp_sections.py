@@ -37,20 +37,53 @@ pacific_transect = {
 years = range(historic_last25y_start, historic_last25y_end + 1)
 input_path = historic_path + '/fesom/'
 
+# Import utils for dynamic batch sizing
+try:
+    from utils import get_optimal_batch_size
+except ImportError:
+    # If running from different directory
+    sys.path.append(os.path.dirname(__file__))
+    from utils import get_optimal_batch_size
+
+def _cdo_timmean_one(variable, path, meshpath, mesh_file):
+    """CDO timmean on one file → annual-mean 3D snapshot in memory."""
+    data = cdo.timmean(
+        input=f'-setgrid,{meshpath}/{mesh_file} {path}',
+        returnArray=variable
+    )
+    return np.squeeze(data)
+
 def load_and_average_temperature_data():
-    """Load and average temperature data over specified years using PyFESOM2"""
-    print(f"Loading temperature data for years {years[0]}-{years[-1]}...")
+    """Load and average temperature data over specified years.
+    Uses CDO timmean per file in parallel via Dask, then averages in numpy."""
+    print(f"Loading temperature data for years {years[0]}-{years[-1]} — CDO + Dask parallel...")
     
-    # Use PyFESOM2 to load data
-    temp_data = pf.get_data(input_path, variable, years, mesh, depth=None)
+    file_paths = [f"{input_path}/{variable}.fesom.{year}.nc" for year in years]
+    existing = [f for f in file_paths if os.path.exists(f)]
+    if not existing:
+        raise ValueError(f"No temperature files found in {input_path}")
     
-    print(f"Temperature data shape: {temp_data.shape}")
-    print(f"Successfully loaded {len(years)} years of data")
+    # Calculate optimal batch size
+    # 3D temp files are large (~4.4GB), so use safety factor 4.0
+    chunk_size = get_optimal_batch_size(existing[0], safety_factor=4.0, max_procs=16)
     
-    return temp_data
+    print(f"  Found {len(existing)} files, processing in parallel batches (batch_size={chunk_size})...")
+    
+    annual_means = []
+    for i in range(0, len(existing), chunk_size):
+        chunk = existing[i:i + chunk_size]
+        tasks = [dask.delayed(_cdo_timmean_one)(variable, f, meshpath, mesh_file) for f in chunk]
+        with ProgressBar():
+            results = dask.compute(*tasks, scheduler='threads')
+        annual_means.extend(results)
+        print(f"  Batch {i//chunk_size + 1}/{math.ceil(len(existing)/chunk_size)} done")
+    
+    temp_avg = np.mean(annual_means, axis=0).astype(np.float32)
+    print(f"Temperature data shape: {temp_avg.shape}, averaged over {len(existing)} years")
+    return temp_avg
 
 def create_and_plot_transect(transect_info, temp_data, output_file):
-    """Create transect using PyFESOM2 and plot it"""
+    """Create transect using PyFESOM2 and plot it manually (plot_transect is deprecated)"""
     
     print(f"Creating transect: {transect_info['name']}")
     
@@ -63,34 +96,45 @@ def create_and_plot_transect(transect_info, temp_data, output_file):
     
     print(f"Transect coordinates created with {len(lonlat[0])} points")
     
-    # Create the plot using PyFESOM2's plot_transect function
+    # Get transect data using get_transect
+    # Returns: dist (1D array of distances), transect_data (2D array [npoints, nlevels])
+    dist, transect_data = pf.get_transect(temp_data, mesh, lonlat)
+    
+    # Create the plot
     fig, ax = plt.subplots(figsize=figsize)
     
-    # Plot transect with PyFESOM2
-    cs = pf.plot_transect(
-        temp_data, mesh, lonlat,
-        maxdepth=5000,
-        levels=np.arange(-2, 30, 0.5),
-        cmap=cm.RdYlBu_r,
-        label="Temperature (°C)",
-        title=f"{transect_info['name']} - Multi-year Mean ({historic_last25y_start}-{historic_last25y_end})"
-    )
+    # Prepare depth axis (using full depth levels or midpoints?)
+    # transect_data shape is (npoints, nlevels). mesh.zlev has nlevels or nlevels+1?
+    # Usually FESOM data is on layers. Let's assume mesh.zlev matches or we slice it.
+    depths = mesh.zlev
+    if len(depths) != transect_data.shape[1]:
+         # Adjust depths if size mismatch (e.g. interfaces vs layers)
+         depths = depths[:transect_data.shape[1]]
     
-    # Add contour lines for major isotherms
+    # Plot using contourf
+    # X=dist, Y=depths, Z=transect_data.T
+    levels = np.arange(-2, 30, 0.5)
+    cmap = cm.RdYlBu_r
+    
+    # Fill contours
+    cs = ax.contourf(dist, depths, transect_data.T, levels=levels, cmap=cmap, extend='both')
+    
+    # Add contour lines
     major_isotherms = [0, 5, 10, 15, 20, 25]
-    cs_lines = pf.plot_transect(
-        temp_data, mesh, lonlat,
-        maxdepth=5000,
-        levels=major_isotherms,
-        colors='black',
-        linewidths=0.5,
-        alpha=0.7
-    )
+    ax.contour(dist, depths, transect_data.T, levels=major_isotherms, colors='black', linewidths=0.5, alpha=0.7)
     
-    # Improve formatting
+    # Add colorbar
+    cbar = plt.colorbar(cs, ax=ax, orientation='vertical', pad=0.02)
+    cbar.set_label("Temperature (°C)")
+    
+    # Formatting
+    ax.set_title(f"{transect_info['name']} - Multi-year Mean ({historic_last25y_start}-{historic_last25y_end})")
     ax.set_ylabel('Depth (m)', fontsize=12)
     ax.set_xlabel('Distance along transect (km)', fontsize=12)
+    ax.invert_yaxis() # Depth goes down
+    ax.set_ylim(5000, 0) # Limit to 5000m depth
     
+    # Save plot
     plt.tight_layout()
     plt.savefig(out_path + output_file, dpi=dpi, bbox_inches='tight')
     plt.close()

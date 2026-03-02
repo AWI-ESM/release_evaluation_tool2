@@ -12,8 +12,57 @@ from pathlib import Path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
 
-import fcntl
-import time
+import psutil
+import math
+
+def get_optimal_batch_size(file_path, safety_factor=4.0, max_procs=16, min_batch=1):
+    """
+    Calculate optimal batch size based on available memory and file size.
+    
+    Parameters:
+    -----------
+    file_path : str
+        Path to a sample input file to check size
+    safety_factor : float
+        Memory safety factor (default 4.0: assume operation needs 4x file size in RAM)
+    max_procs : int
+        Maximum number of concurrent processes to allow
+    min_batch : int
+        Minimum batch size (default 1)
+        
+    Returns:
+    --------
+    int : Recommended batch size
+    """
+    try:
+        # Get file size in GB
+        if not os.path.exists(file_path):
+            return min_batch
+            
+        file_size_gb = os.path.getsize(file_path) / (1024**3)
+        
+        # Get available memory in GB
+        mem = psutil.virtual_memory()
+        available_mem_gb = mem.available / (1024**3)
+        
+        # Estimate max concurrent processes
+        # Formula: (Available RAM) / (File Size * Safety Factor)
+        if file_size_gb > 0:
+            est_procs = int(available_mem_gb / (file_size_gb * safety_factor))
+        else:
+            est_procs = max_procs
+            
+        # Clamp between min_batch and max_procs
+        batch_size = max(min_batch, min(est_procs, max_procs))
+        
+        print(f"Batch sizing: File={file_size_gb:.1f}GB, RAM={available_mem_gb:.1f}GB")
+        print(f"              Optimal batch size = {batch_size} (limit={max_procs})")
+        
+        return batch_size
+        
+    except Exception as e:
+        print(f"Warning: Could not determine optimal batch size ({e}). Using default=4.")
+        return 4
 
 def ensure_weight_file(resolution, meshpath, mesh_file, variable='temp'):
     """

@@ -30,71 +30,56 @@ levels = [-1.5, 1.5, 11]
 mapticks = np.arange(levels[0],levels[1],0.1)
 
 
-# Load reference data using xarray (consistent with main data processing)
+# Import utils for dynamic batch sizing
+try:
+    from utils import get_optimal_batch_size
+except ImportError:
+    # If running from different directory
+    sys.path.append(os.path.dirname(__file__))
+    from utils import get_optimal_batch_size
+
+# CDO helper: compute yearly global-mean depth profile for one file
+def load_parallel_fldmean(variable, path, meshpath, mesh_file):
+    data1 = cdo.yearmean(
+        input=f'-fldmean -setctomiss,0 -setgrid,{meshpath}/{mesh_file} {path}',
+        returnArray=variable
+    )
+    return np.squeeze(data1)
+
+# Load reference data
 path=reference_path+'/'+variable+'.fesom.'+str(reference_years)+'.nc'
 print(f"Loading reference data from {path}...")
-ds_ref = xr.open_dataset(path, decode_times=True, use_cftime=True)
-var_ref = ds_ref[variable]
-
-# Replace 0 with NaN and compute mean
-var_ref = var_ref.where(var_ref != 0)
-data_ref = var_ref.mean(dim=['time', 'nod2']).compute().values.astype(np.float32)
+data_ref = load_parallel_fldmean(variable, path, meshpath, mesh_file)
+# Average over time if multi-timestep
+if data_ref.ndim > 1:
+    data_ref = np.nanmean(data_ref, axis=0)
 n_ref_depths = len(data_ref)
-ds_ref.close()
 print(f"Reference data shape: {data_ref.shape} ({n_ref_depths} depth levels)")
 
-def compute_global_mean_by_depth(var_data):
-    """Compute global mean for each depth level and year using vectorized operations"""
-    
-    # Replace 0 with NaN (same as CDO's setctomiss,0)
-    var_data = var_data.where(var_data != 0)
-    
-    # Compute mean across spatial dimension (nodes) - matches CDO's fldmean
-    # This is a simple mean, not area-weighted, matching the original CDO behavior
-    global_mean = var_data.mean(dim='nod2')
-    
-    # Compute and return as numpy array
-    print("Computing global means (this may take a minute)...")
-    result = global_mean.compute()
-    
-    return result.values.astype(np.float32)
+# Calculate optimal batch size based on first file
+sample_file = f"{input_paths[0]}/{variable}.fesom.{years[0]}.nc"
+chunk_size = get_optimal_batch_size(sample_file, safety_factor=2.0, max_procs=16)
 
 for exp_path, exp_name in zip(input_paths, input_names):
-    print(f"Processing {exp_name} using PyFESOM2/xarray approach...")
+    print(f"Processing {exp_name} — CDO fldmean + Dask parallel...")
     
-    # Build file paths
     file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years]
-    print(f"Opening {len(file_paths)} files with xarray.open_mfdataset...")
     
-    # Open all files at once with xarray (lazy loading)
-    # parallel=False to avoid NetCDF thread-safety issues
-    dataset = xr.open_mfdataset(
-        file_paths, 
-        combine='by_coords', 
-        parallel=False,
-        decode_times=True,
-        use_cftime=True,
-        chunks={'time': 12}  # Chunk by month for efficiency
-    )
+    datat = []
+    for i in range(0, len(file_paths), chunk_size):
+        chunk = file_paths[i:i + chunk_size]
+        chunk_t = [dask.delayed(load_parallel_fldmean)(variable, f, meshpath, mesh_file) for f in chunk]
+        with ProgressBar():
+            datat_chunk = dask.compute(*chunk_t, scheduler='threads')
+        datat.extend(datat_chunk)
+        print(f"  Batch {i//chunk_size + 1}/{math.ceil(len(file_paths)/chunk_size)} done")
     
-    # Get variable and compute yearly means (lazy)
-    print("Grouping by year and computing temporal means...")
-    var_data = dataset[variable]
-    yearly_data = var_data.groupby('time.year').mean('time')
-    
-    # Compute global means for each depth level
-    print("Computing global means for each depth level...")
-    data_full = compute_global_mean_by_depth(yearly_data)
-    
-    # Align depth levels with reference (use minimum of both)
+    data_full = np.array(datat, dtype=np.float32)
     n_common = min(n_ref_depths, data_full.shape[1])
     data[exp_name] = data_full[:, :n_common]
     
     print(f"Final shape: {np.shape(data[exp_name])} (aligned to {n_common} common levels)")
     print(f"Completed processing for {exp_name}")
-    
-    # Close dataset
-    dataset.close()
 
 
     

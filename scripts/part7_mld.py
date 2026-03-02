@@ -29,11 +29,15 @@ def define_rowscol(input_paths, columns=2, reduce=0):
 # Import weight file utility
 from utils import ensure_weight_file
 
-def load_parallel(variable, path, remap_resolution, meshpath, mesh_file):
-    """Load data in parallel using CDO."""
+def load_merged(variable, file_paths, remap_resolution, meshpath, mesh_file):
+    """Load data by merging all files, averaging first, then a single remap.
+    Averages 264 timesteps → 4 seasons BEFORE remapping (huge speedup)."""
     weight_file = ensure_weight_file(remap_resolution, meshpath, mesh_file)
-    data1 = cdo.yseasmean(
-        input=f'-setmissval,nan -setctomiss,0 -remap,r{remap_resolution},{weight_file} -setgrid,{meshpath}/{mesh_file} {path}',
+    input_str = " ".join(file_paths)
+    print(f"  CDO: merging {len(file_paths)} files, yseasmean then remap ...")
+    data1 = cdo.remap(
+        f'r{remap_resolution},{weight_file}',
+        input=f'-setmissval,nan -setctomiss,0 -yseasmean -setgrid,{meshpath}/{mesh_file} -cat [ {input_str} ]',
         returnArray=variable
     )
     return data1
@@ -87,14 +91,11 @@ batch_size = 20  # Process files in batches
 data = OrderedDict()
 for variable in variables:
     for exp_path, exp_name in zip(input_paths, input_names):
-        data[exp_name] = []
-        for i in range(0, len(years), batch_size):
-            batch_years = years[i : i + batch_size]
-            t = [dask.delayed(load_parallel)(variable, f"{exp_path}/{variable}.fesom.{year}.nc", remap_resolution, meshpath, mesh_file) for year in tqdm(batch_years)]
-            with ProgressBar():
-                batch_data = dask.compute(*t, scheduler='threads')
-            data[exp_name].extend(batch_data)
-        data[exp_name] = np.stack(data[exp_name])
+        file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years]
+        existing = [f for f in file_paths if os.path.exists(f)]
+        print(f"Processing {variable} for {exp_name}: {len(existing)} files")
+        result = load_merged(variable, existing, remap_resolution, meshpath, mesh_file)
+        data[exp_name] = result[np.newaxis, ...] if result.ndim < 4 else result
 
 
     # -------------------------------
