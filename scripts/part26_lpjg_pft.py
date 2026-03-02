@@ -12,7 +12,7 @@ print(SCRIPT_NAME)
 update_status(SCRIPT_NAME, " Started")
 
 # Import LPJ-GUESS helper functions
-from lpjg_helpers import read_lpjg_output, interpolate_to_grid, interpolate_dominant_pft
+from lpjg_helpers import read_lpjg_output, interpolate_to_grid, interpolate_dominant_pft, find_lpjg_latest_year
 import matplotlib.colors as mcolors
 
 ############################
@@ -26,7 +26,10 @@ PFT_COLORS = {'BNE': '#0d47a1', 'BINE': '#1976d2', 'BNS': '#64b5f6', 'TeNE': '#4
 BARREN_THRESHOLD = 0.2
 MAX_DISTANCE = 5.0
 GRID_RES = 1.0
-lpjg_analysis_year = historic_last25y_start  # From config
+lpjg_analysis_year = find_lpjg_latest_year(spinup_path)
+if lpjg_analysis_year is None:
+    lpjg_analysis_year = spinup_end - 1
+print(f"LPJ-GUESS analysis year: {lpjg_analysis_year}")
 
 
 ############################

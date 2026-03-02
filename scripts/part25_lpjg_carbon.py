@@ -12,11 +12,14 @@ print(SCRIPT_NAME)
 update_status(SCRIPT_NAME, " Started")
 
 # Import LPJ-GUESS helper functions
-from lpjg_helpers import read_lpjg_output, interpolate_to_grid
+from lpjg_helpers import read_lpjg_output, interpolate_to_grid, find_lpjg_latest_year
 
 # LPJ-GUESS analysis settings
 GRID_RES = 1.0
-lpjg_analysis_year = historic_last25y_start  # From config
+lpjg_analysis_year = find_lpjg_latest_year(spinup_path)
+if lpjg_analysis_year is None:
+    lpjg_analysis_year = spinup_end - 1
+print(f"LPJ-GUESS analysis year: {lpjg_analysis_year}")
 
 
 ############################
