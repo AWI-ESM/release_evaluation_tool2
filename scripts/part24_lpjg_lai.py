@@ -66,7 +66,7 @@ try:
                   f"{model_version} - Year {lpjg_analysis_year}\nLeaf Area Index (Total)", 
                   0, 8, 'YlGn', 'LAI [m²/m²]', lpjg_analysis_year)
     plt.tight_layout()
-    output_file = out_path + f'lpjg_LAI_total_year{lpjg_analysis_year}.png'
+    output_file = out_path + f'lpjg_LAI_total.png'
     plt.savefig(output_file, dpi=dpi, bbox_inches='tight')
     plt.close()
     print(f"Saved: {output_file}")
@@ -90,7 +90,7 @@ try:
                           0, 6, 'YlGn', 'LAI [m²/m²]', lpjg_analysis_year)
         
         plt.tight_layout()
-        output_file = out_path + f'lpjg_LAI_by_PFT_year{lpjg_analysis_year}.png'
+        output_file = out_path + f'lpjg_LAI_by_PFT.png'
         plt.savefig(output_file, dpi=dpi, bbox_inches='tight')
         plt.close()
         print(f"Saved: {output_file}")

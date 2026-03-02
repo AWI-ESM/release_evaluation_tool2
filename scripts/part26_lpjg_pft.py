@@ -85,7 +85,7 @@ try:
               bbox_to_anchor=(0.5, -0.15), framealpha=0.9)
     
     plt.tight_layout()
-    output_file = out_path + f'lpjg_dominant_PFT_year{lpjg_analysis_year}.png'
+    output_file = out_path + f'lpjg_dominant_PFT.png'
     plt.savefig(output_file, dpi=dpi, bbox_inches='tight')
     plt.close()
     print(f"Saved: {output_file}")
@@ -121,7 +121,7 @@ try:
     cbar.set_label('Number of PFTs', fontsize=10)
     
     plt.tight_layout()
-    output_file = out_path + f'lpjg_PFT_richness_year{lpjg_analysis_year}.png'
+    output_file = out_path + f'lpjg_PFT_richness.png'
     plt.savefig(output_file, dpi=dpi, bbox_inches='tight')
     plt.close()
     print(f"Saved: {output_file}")
@@ -162,7 +162,7 @@ try:
         cbar.ax.tick_params(labelsize=7)
     
     plt.tight_layout()
-    output_file = out_path + f'lpjg_PFT_categories_year{lpjg_analysis_year}.png'
+    output_file = out_path + f'lpjg_PFT_categories.png'
     plt.savefig(output_file, dpi=dpi, bbox_inches='tight')
     plt.close()
     print(f"Saved: {output_file}")

@@ -1,0 +1,10 @@
+[35m[Kpart2_rad_balance.py[m[K[36m[K:[m[K    # Try [01;31m[K6h[m[K files
+[35m[Kpart2_rad_balance.py[m[K[36m[K:[m[K    pattern_[01;31m[K6h[m[K = f"atm_remapped_[01;31m[K6h[m[K_{var}_[01;31m[K6h[m[K_{{year:04d}}-{{year:04d}}.nc"
+[35m[Kpart2_rad_balance.py[m[K[36m[K:[m[K    test_file = os.path.join(path, pattern_[01;31m[K6h[m[K.format(year=years[0]))
+[35m[Kpart2_rad_balance.py[m[K[36m[K:[m[K        return pattern_[01;31m[K6h[m[K, "[01;31m[K6h[m[K"
+[35m[Kpart20_gregory_plot.py[m[K[36m[K:[m[K    """Detect available file pattern (1m or [01;31m[K6h[m[K) for given variable."""
+[35m[Kpart20_gregory_plot.py[m[K[36m[K:[m[K    # Try [01;31m[K6h[m[K files
+[35m[Kpart20_gregory_plot.py[m[K[36m[K:[m[K    pattern_[01;31m[K6h[m[K = f"atm_remapped_[01;31m[K6h[m[K_{var}_[01;31m[K6h[m[K_{{year:04d}}-{{year:04d}}.nc"
+[35m[Kpart20_gregory_plot.py[m[K[36m[K:[m[K    test_file = os.path.join(path, pattern_[01;31m[K6h[m[K.format(year=years[0]))
+[35m[Kpart20_gregory_plot.py[m[K[36m[K:[m[K        return pattern_[01;31m[K6h[m[K, "[01;31m[K6h[m[K"
+[35m[Kpart4_cmpi.py[m[K[36m[K:[m[Kcmd = './preprocessing_examples/noncmore_preprocess_AWI-CM3-XIOS_[01;31m[K6h[m[K.sh '+historic_path+' '+tool_path+'/input/ '+model_version+' '+str(historic_start+39)+' '+str(historic_end)+' '+meshpath+'/'+griddes_file

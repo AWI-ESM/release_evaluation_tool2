@@ -66,7 +66,7 @@ try:
                   f"{model_version} - Year {lpjg_analysis_year}\nVegetation Carbon Mass (Total)", 
                   0, 20, 'Greens', 'Carbon [kg C/m²]', lpjg_analysis_year)
     plt.tight_layout()
-    output_file = out_path + f'lpjg_Carbon_total_year{lpjg_analysis_year}.png'
+    output_file = out_path + f'lpjg_Carbon_total.png'
     plt.savefig(output_file, dpi=dpi, bbox_inches='tight')
     plt.close()
     print(f"Saved: {output_file}")
@@ -88,7 +88,7 @@ try:
                           0, 15, 'Greens', 'Carbon [kg C/m²]', lpjg_analysis_year)
         
         plt.tight_layout()
-        output_file = out_path + f'lpjg_Carbon_by_PFT_year{lpjg_analysis_year}.png'
+        output_file = out_path + f'lpjg_Carbon_by_PFT.png'
         plt.savefig(output_file, dpi=dpi, bbox_inches='tight')
         plt.close()
         print(f"Saved: {output_file}")
@@ -106,7 +106,7 @@ try:
                           f"{model_version} - Year {lpjg_analysis_year}\nSoil Carbon Pool (Total)", 
                           0, 30, 'YlOrBr', 'Carbon [kg C/m²]', lpjg_analysis_year)
             plt.tight_layout()
-            output_file = out_path + f'lpjg_SoilCarbon_total_year{lpjg_analysis_year}.png'
+            output_file = out_path + f'lpjg_SoilCarbon_total.png'
             plt.savefig(output_file, dpi=dpi, bbox_inches='tight')
             plt.close()
             print(f"Saved: {output_file}")
@@ -123,7 +123,7 @@ try:
                           f"{model_version} - Year {lpjg_analysis_year}\nTotal Ecosystem Carbon (Vegetation + Soil)", 
                           0, 50, 'BrBG', 'Carbon [kg C/m²]', lpjg_analysis_year)
             plt.tight_layout()
-            output_file = out_path + f'lpjg_EcosystemCarbon_total_year{lpjg_analysis_year}.png'
+            output_file = out_path + f'lpjg_EcosystemCarbon_total.png'
             plt.savefig(output_file, dpi=dpi, bbox_inches='tight')
             plt.close()
             print(f"Saved: {output_file}")
