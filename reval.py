@@ -42,11 +42,11 @@ SBATCH_SETTINGS = """\
 #SBATCH --job-name={job_name}
 #SBATCH --output=logs/{job_name}.log
 #SBATCH --error=logs/{job_name}.log
-#SBATCH --time=00:20:00
+#SBATCH --time=01:00:00
 #SBATCH --ntasks=128
 #SBATCH --ntasks-per-node=128
-#SBATCH --partition=mpp
-#SBATCH -A paleodyn.paleodyn
+#SBATCH --partition=compute
+#SBATCH -A bb1469
 """
 
 
