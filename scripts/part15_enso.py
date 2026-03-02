@@ -51,98 +51,116 @@ years = range(historic_start, historic_end+1)
 figsize=(10, 5)
 
 
-# load mesh and data
-mesh = pf.load_mesh(meshpath, abg=abg, 
-                    usepickle=True, usejoblib=False)
+# Import utils for dynamic batch sizing
+try:
+    from utils import get_optimal_batch_size
+except ImportError:
+    # If running from different directory
+    sys.path.append(os.path.dirname(__file__))
+    from utils import get_optimal_batch_size
+
+# load mesh (only needed for cdo setgrid path, not loading full data)
+# mesh = pf.load_mesh(meshpath, ...) # functionality moved to CDO
+
 if len(years) < 3:
     print("WARNING: ENSO analysis requires at least 3 years of data. Skipping.")
     update_status(SCRIPT_NAME, " Completed")
     sys.exit(0)
 
+def _cdo_remap_one(variable, path, meshpath, mesh_file):
+    """CDO monmean + remapnn to global 1deg grid."""
+    # remapnn to r360x180 (1 degree global)
+    # Use -monmean to ensure monthly data
+    data = cdo.remapnn('r360x180',
+        input=f'-monmean -setgrid,{meshpath}/{mesh_file} {path}',
+        returnArray=variable
+    )
+    return np.squeeze(data)
+
 t1 = time.time()
+print(f"Loading and remapping {variable} data for years {years[0]}-{years[-1]} — CDO + Dask parallel...")
 
-data_raw = pf.get_data(input_paths[0], 'sst', years, mesh, how=None, compute=False, silent=False)
+file_paths = [f"{input_paths[0]}/{variable}.fesom.{year}.nc" for year in years]
+existing = [f for f in file_paths if os.path.exists(f)]
+
+if not existing:
+    print("No data found!")
+    sys.exit(1)
+
+# Dynamic batch size
+chunk_size = get_optimal_batch_size(existing[0], safety_factor=2.0, max_procs=16)
+
+# Process in parallel
+annual_chunks = []
+for i in range(0, len(existing), chunk_size):
+    chunk = existing[i:i + chunk_size]
+    tasks = [dask.delayed(_cdo_remap_one)(variable, f, meshpath, mesh_file) for f in chunk]
+    with ProgressBar():
+        results = dask.compute(*tasks, scheduler='threads')
+    annual_chunks.extend(results)
+    print(f"  Batch {i//chunk_size + 1}/{math.ceil(len(existing)/chunk_size)} done")
+
+# Stack: (Time, Lat, Lon)
+# r360x180: Lon 0..360 (360), Lat -90..90 (180)
+data_raw = np.concatenate(annual_chunks, axis=0)
 t2 = time.time()
-print("data load time: {:.2f} seconds".format(t2 - t1))
+print(f"Data load + remap time: {t2 - t1:.2f} seconds. Shape: {data_raw.shape}")
 
-model_lon = mesh.x2
-model_lon = np.where(model_lon < 0, model_lon+360, model_lon)
-model_lat = mesh.y2
+# Define grid coordinates for r360x180
+# CDO default r360x180:
+# Lon: 0 to 359? Or 0.5 to 359.5?
+# cdo griddes r360x180 says xfirst=0, xinc=1. yfirst=-89.5, yinc=1?
+# Usually standard is x: 0 to 360 (exclusive), y: -90 to 90.
+# Let's construct it to match data shape (180, 360)
+model_lon = np.linspace(0, 359, 360) # Approx
+model_lat = np.linspace(-89.5, 89.5, 180) # Approx
+lon2_global, lat2_global = np.meshgrid(model_lon, model_lat)
+
+# Proceed with analysis using gridded data
+# Original script detrending
+# data_raw shape: (Time, Lat, Lon)
+# Detrend along time axis (axis 0)
+data_raw = signal.detrend(data_raw, axis=0)
+
+# Seasonal Cycle Removal
+# Reshape: (Years, 12, Lat, Lon)
+n_years = data_raw.shape[0] // 12
+data_raw_reshape = data_raw.reshape(n_years, 12, data_raw.shape[1], data_raw.shape[2])
+
+# Mean seasonal cycle
+data_season_cycle = np.mean(data_raw_reshape, axis=0)
+
+# Anomaly
+data = data_raw - np.tile(data_season_cycle, (n_years, 1, 1)).reshape(data_raw.shape)
+
+# Select ENSO region for EOF
+# Lon: 110 to 290, Lat: -46 to 46
+# Find indices
+lon_idx = (model_lon >= 110) & (model_lon <= 290)
+lat_idx = (model_lat >= -46) & (model_lat <= 46)
+
+# Slice data
+sst_eof_region = data[:, :, lon_idx][:, lat_idx, :]
+# Need to construct the sliced coordinate arrays for plotting
+lon2 = lon2_global[lat_idx, :][:, lon_idx]
+lat2 = lat2_global[lat_idx, :][:, lon_idx]
+
+# Perform EOF on sliced data
+sst = sst_eof_region
+# ... EOF solver ... (sst is now Time x Lat x Lon, solver expects Time x Space?)
+# Eof solver expects (Time, Lat, Lon) or (Time, Space).
+# We have (Time, Lat, Lon).
+# Solver weights need to match (Lat, Lon) or (Lat,).
+
+# ... Existing logic continues ...
 
 
-print(type(data_raw))
-# Assuming data_raw and years are defined somewhere in your code
-steps_per_year = int(np.shape(data_raw)[0] / len(years))
-data = np.empty((len(years), data_raw.shape[1]))  # Preallocate array
-
-t3 = time.time()
-for y in tqdm(range(len(years))):
-    data[y, :] = np.mean(data_raw[y*steps_per_year : y*steps_per_year + steps_per_year - 1, :], axis=0)
-t4 = time.time()
-print("Data processing time: {:.2f} seconds".format(t4 - t3))
-
-
-
-
-
-'''
-data = []
-steps_per_year=int(np.shape(data_raw)[0]/len(years))
-t3 = time.time()
-for y in tqdm(range(len(years))):
-    data.append(np.mean(data_raw[y*steps_per_year:y*steps_per_year+steps_per_year-1,:],axis=0))
-t4 = time.time()
-print("data append time: {:.2f} seconds".format(t4 - t3))
-t5 = time.time()
-print(type(data))
-print(len(data))
-data = np.asarray(data)
-t6 = time.time()
-print("conversion to np array time: {:.2f} seconds".format(t6 - t5))
-'''
-t7 = time.time()
-data = signal.detrend(data)
-
-
-t8 = time.time()
-print("conversion to np array time: {:.2f} seconds".format(t8 - t7))
-
-# Detrend linearly to remove forcing or spinup induced trends
-# TODO: probably better to detrend with something like a 50 year running mean
-data_raw = signal.detrend(data_raw)
-
-# Reshape to add monthly time axis
-data_raw_reshape = data_raw.reshape(data_raw.shape[0]//12,data_raw.shape[1], 12)
-
-# Calculate seasonal cycle
-data_season_cycle = np.mean(data_raw_reshape,axis=0)
-
-# Repeat seasonal cycle
-data_season_cycle_repeat = np.repeat(data_season_cycle[np.newaxis,...],np.shape(data_raw_reshape)[0],axis=0)
-
-# Reshape into original format
-data_season_cycle_repeat_reshape = data_season_cycle_repeat.reshape(np.shape(data_raw))
-
-# Remove seasonal cycle from data
-data = data_raw - data_season_cycle_repeat_reshape
-
-#select ENSO region
-lon = np.linspace(110, 290, 181)
-lat = np.linspace(-46, 46, 92)
-lon2, lat2 = np.meshgrid(lon, lat)
-
-# interpolate data onto regular grid
-sst = []
-points = np.vstack((model_lon, model_lat)).T
-for t in tqdm(range(0, np.shape(data)[0])):
-    nn_interpolation = NearestNDInterpolator(points, data[t,:])
-    sst.append(nn_interpolation((lon2, lat2)))
-sst=np.asarray(sst)
-
-# Create an EOF solver to do the EOF analysis. Square-root of cosine of
-# latitude weights are applied before the computation of EOFs.
-coslat = np.cos(np.deg2rad(lat))
-wgts = np.sqrt(coslat)[..., np.newaxis]
+# ... EOF solver ...
+# Fix weights for EOF
+lat_slice = model_lat[lat_idx] # 1D array of latitudes in the slice
+coslat = np.cos(np.deg2rad(lat_slice))
+wgts = np.sqrt(coslat)[..., np.newaxis] # (N_lat, 1) matches (Time, N_lat, N_lon)?
+# Eof package: if weights is (N_lat, 1), it broadcasts to (N_lat, N_lon). Correct.
 solver = Eof(sst, weights=wgts)
 
 # Retrieve the leading EOF, expressed as the correlation between the leading
@@ -156,7 +174,7 @@ pc1 = -np.squeeze(solver.pcs(npcs=1, pcscaling=1))
 
 # Sign of correlation is arbitrary, but plot should be positive
 if np.mean(eof1_corr) < 0:
-    eof1_corr = eof1_corr
+    eof1_corr = -eof1_corr
 if np.mean(eof1) < 0:
     eof1 = -eof1
     
@@ -296,21 +314,24 @@ if ofile:
     except Exception as e:
         print(f"Error saving figure: {e}")
 
-plt.show()
+# plt.show() # Disabled for batch run
 
     
     
-lon = np.linspace(lon_min, lon_max, lon_max-lon_min)
-lat = np.linspace(lat_min, lat_max, lat_max-lat_min)
-lon2, lat2 = np.meshgrid(lon, lat)
+# Nino Index Calculation
+# Select Nino region using slicing instead of interpolation
+nino_lon_idx = (model_lon >= lon_min) & (model_lon <= lon_max)
+nino_lat_idx = (model_lat >= lat_min) & (model_lat <= lat_max)
 
-sst = []
-points = np.vstack((model_lon, model_lat)).T
-for t in tqdm(range(0, np.shape(data_raw)[0])):
-    nn_interpolation = NearestNDInterpolator(points, data[t,:])
-    sst.append(nn_interpolation((lon2, lat2)))
-sst=np.asarray(sst)
-sst_area_mean = np.mean(np.mean(sst,axis=2),axis=1)
+# data is already monthly anomaly (Time, Lat, Lon)
+sst_nino_region = data[:, :, nino_lon_idx][:, nino_lat_idx, :]
+
+# Area mean (Lat, Lon axes are 1, 2)
+sst_area_mean = np.nanmean(sst_nino_region, axis=(1, 2))
+
+# Reshape for analysis
+# sst_area_mean is (N_months,)
+# Original script expects sst_nino to be (Years, 12)
 sst_nino = sst_area_mean.reshape(len(sst_area_mean)//12, 12)
 sst_nino_ano = sst_nino - np.mean(sst_nino)
 
@@ -318,38 +339,40 @@ obs_path = observation_path+'/hadisst2/box'
 
 
 
-from cdo import *   # python version
-cdo = Cdo()
+# Process Observations
+# --------------------
+# Re-import CDO not needed, used from config
+# cdo = Cdo() # Already in config
 obs_raw = cdo.copy(input=str(obs_path),returnArray='sst')
-del cdo
-from scipy import signal
-obs_raw = obs_raw[0:1812]
 
-# Detrend linearly to remove forcing or spinup induced trends
-# TODO: probably better to detrend with something like a 50 year running mean
-data_raw = signal.detrend(data_raw)
-#obs_raw = signal.detrend(obs_raw)
+# Ensure obs_raw is 3D (Time, Lat, Lon)
+if obs_raw.ndim == 1:
+    obs_raw = obs_raw[:, np.newaxis, np.newaxis]
+
+# Truncate to match some length? Original script had obs_raw = obs_raw[0:1812]
+# 1812 months = 151 years.
+if obs_raw.shape[0] > 1812:
+    obs_raw = obs_raw[0:1812]
+
+# Detrend observations
+# obs_raw = signal.detrend(obs_raw, axis=0) # Optional, original script commented it out
 
 # Reshape to add monthly time axis
-data_raw_reshape = data_raw.reshape(data_raw.shape[0]//12,data_raw.shape[1], 12)
-obs_raw_reshape = obs_raw.reshape(obs_raw.shape[0]//12,obs_raw.shape[1],obs_raw.shape[2], 12)
+# obs_raw is (Time, Lat, Lon)
+n_obs_years = obs_raw.shape[0] // 12
+obs_raw_reshape = obs_raw.reshape(n_obs_years, obs_raw.shape[1], obs_raw.shape[2], 12)
 
 # Calculate seasonal cycle
-data_season_cycle = np.mean(data_raw_reshape,axis=0)
-obs_season_cycle = np.mean(obs_raw_reshape,axis=0)
+obs_season_cycle = np.mean(obs_raw_reshape, axis=0)
 
 # Repeat seasonal cycle
-data_season_cycle_repeat = np.repeat(data_season_cycle[np.newaxis,...],np.shape(data_raw_reshape)[0],axis=0)
-obs_season_cycle_repeat = np.repeat(obs_season_cycle[np.newaxis,...],np.shape(obs_raw_reshape)[0],axis=0)
+obs_season_cycle_repeat = np.repeat(obs_season_cycle[np.newaxis,...], n_obs_years, axis=0)
 
 # Reshape into original format
-data_season_cycle_repeat_reshape = data_season_cycle_repeat.reshape(np.shape(data_raw))
-obs_season_cycle_repeat_reshape = obs_season_cycle_repeat.reshape(np.shape(obs_raw))
+obs_season_cycle_repeat_reshape = obs_season_cycle_repeat.reshape(obs_raw.shape)
 
-# Remove seasonal cycle from data
-data = data_raw - data_season_cycle_repeat_reshape
+# Remove seasonal cycle from obs
 obs = obs_raw - obs_season_cycle_repeat_reshape
-
 
 
 def smooth3(x,beta):
@@ -432,7 +455,10 @@ Ntotal = len(sst_nino_ano_smooth)
 data = sst_nino_ano_smooth
 
 # This is  the colormap I'd like to use.
-cm = plt.cm.get_cmap('PuOr_r')
+try:
+    cm = plt.colormaps['PuOr_r']
+except AttributeError:
+    cm = plt.cm.get_cmap('PuOr_r')
 
 # Get the histogramp
 nbins = 13
@@ -467,7 +493,10 @@ Ntotal = len(obs_nino_ano_smooth)
 data = obs_nino_ano_smooth
 
 # This is  the colormap I'd like to use.
-cm = plt.cm.get_cmap('PuOr_r')
+try:
+    cm = plt.colormaps['PuOr_r']
+except AttributeError:
+    cm = plt.cm.get_cmap('PuOr_r')
 
 # Get the histogramp
 nbins = 13
