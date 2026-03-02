@@ -51,6 +51,10 @@ def _cdo_timmean_one(variable, path, meshpath, mesh_file):
         input=f'-setgrid,{meshpath}/{mesh_file} {path}',
         returnArray=variable
     )
+    # CDO timmean returns (1, nlev, nodes) or (1, nodes)
+    # Safely remove time dimension
+    if data.shape[0] == 1:
+        return data[0, ...]
     return np.squeeze(data)
 
 def load_and_average_temperature_data():
@@ -75,11 +79,30 @@ def load_and_average_temperature_data():
         tasks = [dask.delayed(_cdo_timmean_one)(variable, f, meshpath, mesh_file) for f in chunk]
         with ProgressBar():
             results = dask.compute(*tasks, scheduler='threads')
+        
+        # Check shapes
+        for r in results:
+            if annual_means and r.shape != annual_means[0].shape:
+                 print(f"Warning: Shape mismatch! {r.shape} vs {annual_means[0].shape}")
+        
         annual_means.extend(results)
         print(f"  Batch {i//chunk_size + 1}/{math.ceil(len(existing)/chunk_size)} done")
     
-    temp_avg = np.mean(annual_means, axis=0).astype(np.float32)
-    print(f"Temperature data shape: {temp_avg.shape}, averaged over {len(existing)} years")
+    # Ensure all arrays have same shape
+    first_shape = annual_means[0].shape
+    valid_means = [a for a in annual_means if a.shape == first_shape]
+    if len(valid_means) < len(annual_means):
+        print(f"Warning: Dropped {len(annual_means) - len(valid_means)} arrays due to shape mismatch")
+        
+    temp_avg = np.mean(valid_means, axis=0).astype(np.float32)
+    
+    # CDO returns (Level, Node), but PyFESOM functions expect (Node, Level)
+    # Heuristic: Nodes (3M) > Levels (56)
+    if temp_avg.shape[0] < temp_avg.shape[1]:
+        print(f"Transposing data from {temp_avg.shape} to (Node, Level) format for PyFESOM...")
+        temp_avg = temp_avg.T
+        
+    print(f"Temperature data shape: {temp_avg.shape}, averaged over {len(valid_means)} years")
     return temp_avg
 
 def create_and_plot_transect(transect_info, temp_data, output_file):
