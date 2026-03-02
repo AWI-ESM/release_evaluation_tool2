@@ -16,6 +16,59 @@ from cartopy.io import shapereader
 _land_mask_cache = {}
 
 
+def find_lpjg_latest_year(base_path):
+    """
+    Find the latest year available in LPJ-GUESS output.
+    Scans the last date-range directory or run directory for the maximum year.
+    
+    Parameters:
+    -----------
+    base_path : Path or str
+        Base path (outdata directory) that contains lpj_guess subdirectory
+        
+    Returns:
+    --------
+    int or None
+        Latest year found, or None if no data found
+    """
+    base = Path(base_path)
+    lpjg_dir = None
+    for d in [base / "lpj_guess", base / "lpjg", base / "lpj-guess"]:
+        if d.exists():
+            lpjg_dir = d
+            break
+    if lpjg_dir is None:
+        return None
+    
+    # Find run dirs (flat or nested)
+    run_dirs = sorted(glob.glob(str(lpjg_dir / "run*")))
+    if not run_dirs:
+        run_dirs = sorted(glob.glob(str(lpjg_dir / "*" / "run*")))
+    if not run_dirs:
+        return None
+    
+    # Check the last run directory for a small output file to find max year
+    last_run = Path(run_dirs[-1])
+    for probe_file in ["lai.out", "cmass.out", "cflux.out"]:
+        fpath = last_run / probe_file
+        if fpath.exists():
+            max_year = None
+            with open(fpath, 'r') as f:
+                next(f)  # skip header
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        try:
+                            yr = int(parts[2])
+                            if max_year is None or yr > max_year:
+                                max_year = yr
+                        except ValueError:
+                            continue
+            if max_year is not None:
+                return max_year
+    return None
+
+
 def read_lpjg_output(base_path, filename, year):
     """
     Read LPJ-GUESS output files from run directories.
@@ -55,8 +108,11 @@ def read_lpjg_output(base_path, filename, year):
         print(f"Warning: Could not find lpj_guess directory under {base_path}")
         return None
     
-    # Find all run directories (run1, run2, run3, etc.)
+    # Find all run directories: either lpj_guess/run* or lpj_guess/YYYYMMDD-YYYYMMDD/run*
     run_dirs = sorted(glob.glob(str(lpjg_dir / "run*")))
+    if not run_dirs:
+        # Try nested date-range directories (YYYYMMDD-YYYYMMDD/run*)
+        run_dirs = sorted(glob.glob(str(lpjg_dir / "*" / "run*")))
     if not run_dirs:
         print(f"Warning: No run directories found in {lpjg_dir}")
         return None

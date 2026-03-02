@@ -144,7 +144,9 @@ SCRIPTS.update({
     "part26_lpjg_pft.py":           True,
 })
 
-# Submit jobs
+# Submit jobs and collect job IDs for the report dependency
+submitted_job_ids = []
+
 for script, run in SCRIPTS.items():
     if run:
         job_script = f"slurm_{script}.sh"
@@ -158,11 +160,50 @@ for script, run in SCRIPTS.items():
             f.write(f"\nexport REVAL_CONFIG={config_path}\n")  # Pass config file path
             f.write(f"python {script_path}\n")
 
-        # Submit job
+        # Submit job and capture job ID
         print(f"Submitting {script} as:")
-        subprocess.run(["sbatch", job_script])
+        result = subprocess.run(["sbatch", job_script], capture_output=True, text=True)
+        print(result.stdout.strip())
+        # Parse job ID from "Submitted batch job 12345678"
+        if result.returncode == 0 and "Submitted" in result.stdout:
+            try:
+                job_id = result.stdout.strip().split()[-1]
+                submitted_job_ids.append(job_id)
+            except (IndexError, ValueError):
+                pass
         destination = f"tmp/{job_script}"
         shutil.move(job_script, destination)
     else:
         print(f"Skipped {script} (disabled)")
+
+# Submit HTML report generation after all analysis jobs finish
+if submitted_job_ids:
+    print(f"\n{'='*60}")
+    print(f"Submitting HTML report generator (after {len(submitted_job_ids)} jobs)...")
+    
+    SBATCH_REPORT = """\
+#!/bin/bash
+#SBATCH --job-name=generate_report
+#SBATCH --output=logs/generate_report.log
+#SBATCH --error=logs/generate_report.log
+#SBATCH --time=00:10:00
+#SBATCH --ntasks=1
+#SBATCH --partition=compute
+#SBATCH -A bb1469
+"""
+    report_script = "slurm_generate_report.sh"
+    dep_str = ":".join(submitted_job_ids)
+    with open(report_script, "w") as f:
+        f.write(SBATCH_REPORT)
+        f.write(f"\nsource $HOME/loadconda.sh\n")
+        f.write("conda activate reval\n")
+        f.write(f"\nexport REVAL_CONFIG={config_path}\n")
+        f.write("python scripts/generate_report.py\n")
+
+    result = subprocess.run(
+        ["sbatch", f"--dependency=afterany:{dep_str}", report_script],
+        capture_output=True, text=True)
+    print(result.stdout.strip())
+    shutil.move(report_script, f"tmp/{report_script}")
+    print("Report will be generated after all analysis jobs complete.")
 
