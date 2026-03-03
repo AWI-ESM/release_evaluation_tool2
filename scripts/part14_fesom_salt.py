@@ -11,7 +11,15 @@ print(SCRIPT_NAME)
 # Mark as started
 update_status(SCRIPT_NAME, " Started")
 
-mesh = pf.load_mesh(meshpath)
+# Import optimization utilities
+try:
+    from utils import get_optimal_batch_size
+except ImportError:
+    sys.path.append(os.path.dirname(__file__))
+    from utils import get_optimal_batch_size
+
+import dask
+from dask.diagnostics import ProgressBar
 
 # parameters cell
 input_paths = [historic_path+'/fesom']
@@ -187,7 +195,12 @@ def create_indexes_and_distances(mesh, lons, lats, k=1, n_jobs=2):
     xt, yt, zt = lon_lat_to_cartesian(lons.flatten(), lats.flatten())
 
     tree = cKDTree(list(zip(xs, ys, zs)))
-    distances, inds = tree.query(list(zip(xt, yt, zt)), k=k, n_jobs=n_jobs)
+    # Use 'workers' instead of deprecated 'n_jobs' for newer scipy versions
+    try:
+        distances, inds = tree.query(list(zip(xt, yt, zt)), k=k, workers=n_jobs)
+    except TypeError:
+        # Fallback for older scipy versions
+        distances, inds = tree.query(list(zip(xt, yt, zt)), k=k, n_jobs=n_jobs)
 
     return distances, inds
 
@@ -810,7 +823,120 @@ def plot(
         label.set_visible(False)
     return ax,latreg
 
-for depth in [0,100,1000,4000]:
+# Map depth to nearest level index in mesh
+# zlev: 0, -5, -10, ..., -100 (idx 12), ..., -1040 (idx 33), ..., -4150 (idx 48)
+depth_to_level = {
+    0: 1,      # 0m exact
+    100: 12,   # -100m exact
+    1000: 33,  # -1040m (nearest to -1000m)
+    4000: 48   # -4150m (nearest to -4000m)
+}
+
+def load_all_depths_fast(exp_path, variable, years, level_indices, meshpath, mesh_file):
+    """Load and average data at multiple depth levels using CDO + Dask parallel.
+    
+    This loads all depths in one pass through the files to minimize I/O.
+    
+    Returns:
+        dict: {level_idx: averaged_data_array}
+    """
+    # Handle both single year (int) and year ranges (iterable)
+    if isinstance(years, int):
+        years = [years]
+    file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years]
+    existing = [f for f in file_paths if os.path.exists(f)]
+    
+    if not existing:
+        raise ValueError(f"No {variable} files found")
+    
+    # Optimal batch size - reduce for multi-level extraction to avoid /tmp overflow
+    base_chunk_size = get_optimal_batch_size(existing[0], safety_factor=4.0, max_procs=16)
+    # When extracting multiple levels, each temp file is ~4x larger, so reduce batch size
+    chunk_size = max(1, base_chunk_size // len(level_indices))
+    level_list = ','.join(map(str, level_indices))
+    print(f"  Loading {variable} levels {level_list} for {len(existing)} years (batch={chunk_size})...")
+    
+    def _process_one(fpath):
+        """CDO: select all levels + time mean."""
+        # Select all levels at once
+        data = cdo.timmean(
+            input=f'-sellevidx,{level_list} -setgrid,{meshpath}/{mesh_file} {fpath}',
+            returnArray=variable
+        )
+        # Return dict with data for each level
+        result = {}
+        
+        # CDO with sellevidx returns (time, npoints, nlevels) or (npoints, nlevels)
+        # After timmean, we get (npoints, nlevels) but might have extra dims
+        
+        # Remove all singleton dimensions
+        data = np.squeeze(data)
+        
+        # Now we should have (npoints, nlevels) for multiple levels or (npoints,) for single level
+        if data.ndim == 2:
+            # Shape is (npoints, nlevels) - transpose to get (nlevels, npoints)
+            if data.shape[1] == len(level_indices):
+                data = data.T  # Now (nlevels, npoints)
+                for i, level_idx in enumerate(level_indices):
+                    result[level_idx] = data[i, :]
+            elif data.shape[0] == len(level_indices):
+                # Already correct shape
+                for i, level_idx in enumerate(level_indices):
+                    result[level_idx] = data[i, :]
+        elif data.ndim == 1 and len(level_indices) == 1:
+            # Single level, single dimension
+            result[level_indices[0]] = data
+        else:
+            raise ValueError(f"Unexpected data shape {data.shape} for {len(level_indices)} levels")
+        
+        return result
+    
+    # Parallel processing
+    annual_data = {idx: [] for idx in level_indices}
+    for i in range(0, len(existing), chunk_size):
+        chunk = existing[i:i + chunk_size]
+        tasks = [dask.delayed(_process_one)(f) for f in chunk]
+        with ProgressBar():
+            results = dask.compute(*tasks, scheduler='threads')
+        # Aggregate by level
+        for result_dict in results:
+            for level_idx, data in result_dict.items():
+                annual_data[level_idx].append(data)
+    
+    # Average over years for each level
+    averaged = {}
+    for level_idx, data_list in annual_data.items():
+        averaged[level_idx] = np.mean(data_list, axis=0).astype(np.float32)
+    
+    return averaged
+
+# Load mesh once (outside loop)
+if input_names is None:
+    input_names = []
+    for run in input_paths:
+        run = os.path.join(run, '')
+        input_names.append(run.split('/')[-2])
+
+mesh = pf.load_mesh(meshpath, abg=abg, usepickle=True, usejoblib=False)
+
+from pprint import pprint
+pprint(vars(mesh))
+
+# Load all depth levels at once for reference data
+depths = [0, 100, 1000, 4000]
+level_indices = [depth_to_level[d] for d in depths]
+print(f"\nLoading reference {variable} at all depths in one pass...")
+reference_data_all = load_all_depths_fast(reference_path, variable, reference_years, level_indices, meshpath, mesh_file)
+
+# Load all depth levels at once for each experiment
+model_data_all = {}
+for exp_path, exp_name in zip(input_paths, input_names):
+    print(f"\nLoading model {variable} ({exp_name}) at all depths in one pass...")
+    model_data_all[exp_name] = load_all_depths_fast(exp_path, variable, years, level_indices, meshpath, mesh_file)
+
+# Now loop through depths for plotting only
+for depth in depths:
+    level_idx = depth_to_level[depth]
 
     if depth==0:
         title2 = "Surface salinity bias vs. PHC3"
@@ -825,24 +951,15 @@ for depth in [0,100,1000,4000]:
         title2 = "4000 meter salinity bias vs. PHC3"
         ofile=str(depth)+"m-salt-phc3"
 
-
-    if input_names is None:
-        input_names = []
-        for run in input_paths:
-            run = os.path.join(run, '')
-            input_names.append(run.split('/')[-2])
-
-    mesh = pf.load_mesh(meshpath, abg=abg, 
-                        usepickle=True, usejoblib=False)
-
-    from pprint import pprint
-    pprint(vars(mesh))
-
     plotds = OrderedDict()
-    data_reference = pf.get_data(reference_path, variable, reference_years, mesh, depth = depth, how=how, compute=True, silent=True)
     plotds[depth] = {}
-    for exp_path, exp_name  in zip(input_paths, input_names):
-        data_test      = pf.get_data(exp_path, variable, years, mesh, depth = depth, how=how, compute=True, silent=True)
+    
+    # Get pre-loaded reference data for this depth
+    data_reference = reference_data_all[level_idx]
+    
+    for exp_path, exp_name in zip(input_paths, input_names):
+        # Get pre-loaded model data for this depth
+        data_test = model_data_all[exp_name][level_idx]
         data_difference= data_test - data_reference
         title = exp_name+" - "+reference_name
         plotds[depth][title] = {}
