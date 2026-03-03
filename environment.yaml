@@ -2,9 +2,9 @@ name: reval
 channels:
   - conda-forge
 dependencies:
-  - python
+  - python=3.12
   - pip
-  - pandas<3.0
+  - pandas>=1.0.0,<3.0
   - numpy
   - netcdf4
   - joblib
@@ -26,6 +26,9 @@ dependencies:
   - eofs
   - scikit-learn
   - natsort
+  - pooch
+  - regionmask
+  - geopandas
   - setuptools<71
   - pip:
     - pyfesom2

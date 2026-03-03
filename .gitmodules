@@ -1,0 +1,3 @@
+[submodule "bg_routines/cmpitool"]
+	path = bg_routines/cmpitool
+	url = https://github.com/JanStreffing/cmpitool.git
