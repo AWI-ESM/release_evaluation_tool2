@@ -106,7 +106,7 @@ mdval = md(data_model_mean,data_reanalysis_mean,wgts)
 
 
 nrows, ncol = define_rowscol(input_paths)
-fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize, subplot_kw={'projection': ccrs.Robinson(central_longitude=200)})
+fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize, subplot_kw={'projection': ccrs.PlateCarree()})
 if isinstance(axes, np.ndarray):
     axes = axes.flatten()
 else:
@@ -117,7 +117,7 @@ i = 0
     
 for key in input_names:
 
-    axes[i]=plt.subplot(nrows,ncol,i+1,projection=ccrs.Robinson(central_longitude=200))
+    axes[i]=plt.subplot(nrows,ncol,i+1,projection=ccrs.PlateCarree())
     axes[i].add_feature(cfeature.COASTLINE,zorder=3)
     
     

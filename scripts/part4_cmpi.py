@@ -92,8 +92,7 @@ try:
     # ======================================
     
     # Define which variables to evaluate for this model
-    # Exclude siconc if sea ice data not available
-    model_variables = [tas, clt, pr, rlut, uas, vas, ua, zg, zos, mlotst, thetao, so]
+    model_variables = [siconc, tas, clt, pr, rlut, uas, vas, ua, zg, zos, mlotst, thetao, so]
     
     # Define the model to evaluate
     models = [
