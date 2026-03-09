@@ -134,7 +134,6 @@ for key in input_names:
     axes[i].set_xlabel('Simulation Year')
     
     axes[i].set_title("Precipitation vs. GPCP",fontweight="bold")
-    plt.tight_layout() 
     gl = axes[i].gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
                   linewidth=1, color='gray', alpha=0.2, linestyle='-')
 
