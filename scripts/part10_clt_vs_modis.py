@@ -139,7 +139,7 @@ for i, exp_name in enumerate(input_names):
     ax.set_title(title, fontweight="bold")
 
     # Gridlines
-    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True, linewidth=1, color='gray', alpha=0.2, linestyle='-')
+    gl = ax.gridlines(draw_labels=True, linewidth=1, color='gray', alpha=0.2, linestyle='-')
     gl.xlabels_bottom = False
 
     # Bias & RMSD Text
@@ -147,21 +147,17 @@ for i, exp_name in enumerate(input_names):
     textbias = f'bias={round(mdval, 3)}'
     props = dict(boxstyle='round,pad=0.1', facecolor='white', alpha=0.5)
 
-    ax.text(0.02, 0.35, textrsmd, transform=ax.transAxes, fontsize=13,
+    ax.text(0.02, 0.4, textrsmd, transform=ax.transAxes, fontsize=13,
             verticalalignment='top', bbox=props, zorder=4)
-    ax.text(0.02, 0.25, textbias, transform=ax.transAxes, fontsize=13,
+    ax.text(0.02, 0.3, textbias, transform=ax.transAxes, fontsize=13,
             verticalalignment='top', bbox=props, zorder=4)
 
-# Add Colorbar (Positioned Correctly)
+# Colorbar
 cbar_ax_abs = fig.add_axes([0.15, 0.11, 0.7, 0.05])
 cbar_ax_abs.tick_params(labelsize=12)
 cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal', ticks=mapticks)
 cb.set_label(label="%", size=14)
 cb.ax.tick_params(labelsize=12)
-
-# Remove extra subplot spacing
-plt.subplots_adjust(hspace=0.3, wspace=0.3)  # Fine-tuned spacing
-plt.tight_layout(rect=[0, 0.07, 1, 1])  # Prevents extra box while preserving layout
 
 # Save figure
 ofile = variable[0] + '_vs_MODIS'
