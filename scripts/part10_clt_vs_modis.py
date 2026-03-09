@@ -153,7 +153,7 @@ for i, exp_name in enumerate(input_names):
             verticalalignment='top', bbox=props, zorder=4)
 
 # Add Colorbar (Positioned Correctly)
-cbar_ax_abs = fig.add_axes([0.15, 0.05, 0.7, 0.03])  # Adjusted position to remove box effect
+cbar_ax_abs = fig.add_axes([0.15, 0.11, 0.7, 0.05])
 cbar_ax_abs.tick_params(labelsize=12)
 cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal', ticks=mapticks)
 cb.set_label(label="%", size=14)

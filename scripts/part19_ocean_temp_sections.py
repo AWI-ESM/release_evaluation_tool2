@@ -122,16 +122,18 @@ def create_and_plot_transect(transect_info, temp_data, output_file):
     # Get transect data using get_transect
     # Returns: dist (1D array of distances), transect_data (2D array [npoints, nlevels])
     dist, transect_data = pf.get_transect(temp_data, mesh, lonlat)
+    transect_data = np.array(transect_data, dtype=np.float64)
+    
+    # Replace FESOM fill values with NaN (fill value ~9.97e+36)
+    transect_data[transect_data > 1e10] = np.nan
     
     # Create the plot
     fig, ax = plt.subplots(figsize=figsize)
     
-    # Prepare depth axis (using full depth levels or midpoints?)
-    # transect_data shape is (npoints, nlevels). mesh.zlev has nlevels or nlevels+1?
-    # Usually FESOM data is on layers. Let's assume mesh.zlev matches or we slice it.
-    depths = mesh.zlev
+    # Prepare depth axis: mesh.zlev has nlevels+1 interfaces, data has nlevels layers
+    # FESOM depths are negative (0, -5, -10, ...), convert to positive for plotting
+    depths = -np.array(mesh.zlev)
     if len(depths) != transect_data.shape[1]:
-         # Adjust depths if size mismatch (e.g. interfaces vs layers)
          depths = depths[:transect_data.shape[1]]
     
     # Plot using contourf
