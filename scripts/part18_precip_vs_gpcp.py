@@ -106,55 +106,55 @@ mdval = md(data_model_mean,data_reanalysis_mean,wgts)
 
 
 nrows, ncol = define_rowscol(input_paths)
-fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize, subplot_kw={'projection': ccrs.PlateCarree()})
+fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize,
+                         subplot_kw={'projection': ccrs.PlateCarree()})
+
 if isinstance(axes, np.ndarray):
     axes = axes.flatten()
 else:
     axes = [axes]
-i = 0
 
-
+# Loop through input names and plot data
+for i, exp_name in enumerate(input_names):
+    print(exp_name)
     
-for key in input_names:
+    ax = axes[i]
+    ax.add_feature(cfeature.COASTLINE, zorder=3)
 
-    axes[i]=plt.subplot(nrows,ncol,i+1,projection=ccrs.PlateCarree())
-    axes[i].add_feature(cfeature.COASTLINE,zorder=3)
+    # Contour plot
+    imf = ax.contourf(lon, lat, data_model_mean - data_reanalysis_mean, 
+                       cmap=plt.cm.PuOr, levels=levels, extend='both',
+                       transform=ccrs.PlateCarree(), zorder=1)
     
-    
-    imf=plt.contourf(lon, lat, data_model_mean-
-                    data_reanalysis_mean, cmap=plt.cm.PuOr, 
-                     levels=levels, extend='both',
-                     transform=ccrs.PlateCarree(),zorder=1)
-    line_colors = ['black' for l in imf.levels]
-    imc=plt.contour(lon, lat, data_model_mean-
-                    data_reanalysis_mean, colors=line_colors, 
-                    levels=levels, linewidths=contour_outline_thickness,
-                    transform=ccrs.PlateCarree(),zorder=1)
+    line_colors = ['black' for _ in imf.levels]
+    imc = ax.contour(lon, lat, data_model_mean - data_reanalysis_mean, 
+                     colors=line_colors, levels=levels, linewidths=contour_outline_thickness,
+                     transform=ccrs.PlateCarree(), zorder=1)
 
-    axes[i].set_xlabel('Simulation Year')
-    
-    axes[i].set_title("Precipitation vs. GPCP",fontweight="bold")
-    gl = axes[i].gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
-                  linewidth=1, color='gray', alpha=0.2, linestyle='-')
+    ax.set_ylabel('mm/day')
+    ax.set_xlabel('Simulation Year')
+    ax.set_title("Precipitation vs. GPCP", fontweight="bold")
 
+    # Gridlines
+    gl = ax.gridlines(draw_labels=True, linewidth=1, color='gray', alpha=0.2, linestyle='-')
     gl.xlabels_bottom = False
-    
-    textrsmd='rmsd='+str(round(rmsdval,3))
-    textbias='bias='+str(round(mdval,3))
+
+    # Bias & RMSD Text
+    textrsmd = f'rmsd={round(rmsdval, 3)}'
+    textbias = f'bias={round(mdval, 3)}'
     props = dict(boxstyle='round,pad=0.1', facecolor='white', alpha=0.5)
-    axes[i].text(0.08, 0.33, textrsmd, transform=axes[i].transAxes, fontsize=11,
-        verticalalignment='top', bbox=props, zorder=4)
-    axes[i].text(0.08, 0.25, textbias, transform=axes[i].transAxes, fontsize=11,
-        verticalalignment='top', bbox=props, zorder=4)
-    
-    
-    i = i+1
-    
-    cbar_ax_abs = fig.add_axes([0.15, 0.11, 0.7, 0.05])
-    cbar_ax_abs.tick_params(labelsize=12)
-    cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal',ticks=levels)
-    cb.set_label(label="mm/day", size='14')
-    cb.ax.tick_params(labelsize='12')
+
+    ax.text(0.02, 0.4, textrsmd, transform=ax.transAxes, fontsize=13,
+            verticalalignment='top', bbox=props, zorder=4)
+    ax.text(0.02, 0.3, textbias, transform=ax.transAxes, fontsize=13,
+            verticalalignment='top', bbox=props, zorder=4)
+
+# Colorbar
+cbar_ax_abs = fig.add_axes([0.15, 0.11, 0.7, 0.05])
+cbar_ax_abs.tick_params(labelsize=12)
+cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal', ticks=levels)
+cb.set_label(label="mm/day", size=14)
+cb.ax.tick_params(labelsize=12)
 
     
 for label in cb.ax.xaxis.get_ticklabels()[::2]:
