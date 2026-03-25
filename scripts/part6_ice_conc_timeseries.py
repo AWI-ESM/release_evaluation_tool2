@@ -122,7 +122,7 @@ ax1.set_title('Sea ice extent', fontsize=17,fontweight='bold')
 
 #fig.text(-0.04, 0.5, 'Sea ice extent [$1000 km^2$]', fontsize=13, va='center', rotation=90)
 #fig.text(0.5, -0.02, 'Year', fontsize=13, ha='center', rotation=0)
-ax1.set_ylabel('Sea ice extent [$1000 km^2$]', fontsize=17)
+ax1.set_ylabel('Sea ice extent [$Mio. km^2$]', fontsize=17)
 ax1.set_xlabel('Year', fontsize=17)
 
 ax1.yaxis.grid(color='gray', linestyle='dashed')
@@ -142,7 +142,7 @@ ax1.tick_params(axis='both', which='minor', labelsize=12)
 ax1.xaxis.set_minor_locator(MultipleLocator(10))
 
 legend=['Arctic March','Arctic September','Antarctic March','Antarctic September']
-plt.legend(legend,loc='upper left',fontsize=15)
+plt.legend(legend,loc='upper left', bbox_to_anchor=(0., 1.35),fontsize=15)
 plt.savefig(out_path+"sea_ice_extent_comparison.png",dpi=300,bbox_inches = "tight")#%%capture
 runs=[spinup_name, historic_name, pi_ctrl_name]
 
@@ -253,7 +253,7 @@ ax1.set_title('Sea ice extent', fontsize=17,fontweight='bold')
 
 #fig.text(-0.04, 0.5, 'Sea ice extent [$1000 km^2$]', fontsize=13, va='center', rotation=90)
 #fig.text(0.5, -0.02, 'Year', fontsize=13, ha='center', rotation=0)
-ax1.set_ylabel('Sea ice extent [$1000 km^2$]', fontsize=17)
+ax1.set_ylabel('Sea ice extent [$Mio. km^2$]', fontsize=17)
 ax1.set_xlabel('Year', fontsize=17)
 
 ax1.yaxis.grid(color='gray', linestyle='dashed')
@@ -273,7 +273,7 @@ ax1.tick_params(axis='both', which='minor', labelsize=12)
 ax1.xaxis.set_minor_locator(MultipleLocator(10))
 
 legend=['Arctic March','Arctic September','Antarctic March','Antarctic September']
-plt.legend(legend,loc='upper left',fontsize=15)
+plt.legend(legend,loc='upper left', bbox_to_anchor=(0., 1.35),fontsize=15)
 plt.savefig(out_path+"sea_ice_extent_comparison.png",dpi=300,bbox_inches = "tight")
 
 
