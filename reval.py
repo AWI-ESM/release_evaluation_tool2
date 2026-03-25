@@ -42,7 +42,7 @@ SBATCH_SETTINGS = """\
 #SBATCH --job-name={job_name}
 #SBATCH --output=logs/{job_name}.log
 #SBATCH --error=logs/{job_name}.log
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH --ntasks=128
 #SBATCH --ntasks-per-node=128
 #SBATCH --partition=compute
@@ -120,6 +120,7 @@ SCRIPTS.update({
     "part1_mesh_plot.py":           True,
     "part2_rad_balance.py":         True,
     "part3_hovm_temp.py":           True,
+    "part4_cmpi.py":                True,
     "part5_sea_ice_thickness.py":   True,
     "part6_ice_conc_timeseries.py": True,
     "part7_mld.py":                 True,
@@ -128,8 +129,8 @@ SCRIPTS.update({
     "part10_clt_vs_modis.py":       True,
     "part11_zonal_plots.py":        True,
     "part12_qbo.py":                True,
-    "part13_fesom_bias_maps.py":    True,
-    "part14_fesom_salt.py":         True,
+    "part13_fesom_temp_bias.py":    True,
+    "part14_fesom_salt_bias.py":    True,
     "part15_enso.py":               True,
     "part16_clim_change.py":        True,
     "part17_moc.py":                True,

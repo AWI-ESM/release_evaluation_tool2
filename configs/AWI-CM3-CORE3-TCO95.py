@@ -46,7 +46,7 @@ from cartopy import config
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.util import add_cyclic_point
-# from mpl_toolkits.basemap import Basemap  # Not available in this environment
+from mpl_toolkits.basemap import Basemap
 import cmocean as cmo
 from cmocean import cm as cmof
 import matplotlib.pylab as pylab
@@ -80,14 +80,14 @@ from bg_routines.colormap_c2c    import *
 ############################
 
 #Name of model release
-model_version  = 'AWI-ESM3.4_rc3_HR'
-oasis_oifs_grid_name = 'A320'
+model_version  = 'awicm3_core3-tco95'
+oasis_oifs_grid_name = 'A096'
 
 #Spinup
-spinup_path    = '/work/bb1469/a270092/runtime/awiesm3-develop/final_test_spin_01/outdata/'
+spinup_path    = '/work/bb1469/a270092/runtime/awicm3-develop/CORE3_SPIN_900s/outdata/'
 spinup_name    = model_version+'_spinup'
-spinup_start   = 1350
-spinup_end     = 1359
+spinup_start   = 2000
+spinup_end     = 2049
 
 #Preindustrial Control
 pi_ctrl_path   = spinup_path
@@ -106,18 +106,18 @@ historic_end   = spinup_end
 reanalysis             = 'ERA5'
 remap_resolution       = '512x256'
 dpi                    = 300
-historic_last25y_start = historic_start  # Use start year (only 6 years of data: 1354-1359)
+historic_last25y_start = historic_end-25
 historic_last25y_end   = historic_end
-status_csv             = "logs/status.csv"  # Fixed path
+status_csv             = "log/status.csv"
 
 #Mesh
-mesh_name      = 'DARS2'
-grid_name      = 'TCo319'
-meshpath       = '/work/bb1469/a270089/Meshes/DARS2//'
+mesh_name      = 'CORE3'
+grid_name      = 'TCO95'
+meshpath       = '/work/ab0246/a270092/input/fesom2/core3/'
 mesh_file      = 'mesh.nc'
 griddes_file   = 'mesh.nc'
 abg            = [0, 0, 0]
-reference_path = '/work/ab0246/a270092/postprocessing/climatologies/DARS2/'
+reference_path = '/work/ab0246/a270092/postprocessing/climatologies/CORE3/'
 reference_name = 'clim'
 reference_years= 1958
 accumulation_period = 21600

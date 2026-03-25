@@ -26,9 +26,17 @@ Originally developed for [Streffing et al. (2022, GMD)](https://doi.org/10.5194/
 # Clone repository
 cd /work/ab0246/a270092/software/release_evaluation_tool2
 
+# Create/update conda environment
+conda env create -f environment.yaml  # first time
+# OR
+conda env update -f environment.yaml  # update existing
+
 # Activate environment
 source ~/loadconda.sh
 conda activate reval
+
+# Install cmiptool module (integrated from cmpitool/)
+pip install -e ./cmpitool
 
 # Submit all enabled scripts with a config file
 python reval.py -c configs/AWI-CM3-v3.3.py
@@ -77,6 +85,14 @@ release_evaluation_tool2/
 │   ├── sub_fesom_data.py
 │   └── ...
 │
+├── cmpitool/              # CMPI tool module (integrated)
+│   ├── cmpitool/
+│   ├── setup.py
+│   └── requirements.txt
+│
+├── preprocessing_examples/ # Preprocessing scripts for CMPI
+│   └── preprocess_AWI-CM3-XIOS.sh
+│
 ├── logs/                  # SLURM output logs
 │   ├── status.csv         # Completion tracking
 │   └── part##_*.log       # Individual script logs
@@ -85,6 +101,28 @@ release_evaluation_tool2/
 │   └── <model_version>/
 │
 └── tmp/                   # Temporary SLURM scripts
+```
+
+---
+
+## CMPI Tool Integration
+
+The CMIP Performance Index (CMPI) tool has been integrated into reval for automated climate model evaluation against CMIP6 benchmarks.
+
+### Requirements
+- **Observational Data**: Downloaded automatically by `pooch` on first run
+- **Preprocessing**: AWI-CM3-XIOS data must be preprocessed before CMPI analysis
+- **Dependencies**: All required packages (pooch, regionmask, geopandas) are in `environment.yaml`
+
+### Usage
+CMPI analysis runs automatically via `part4_cmpi.py` when enabled in `reval.py`. The script:
+1. Runs preprocessing automatically using `preprocessing_examples/preprocess_AWI-CM3-XIOS.sh`
+2. Generates CMIP6 performance scores and bias maps
+3. Outputs results to `output/<model_version>/`
+
+For manual testing with a subset of years:
+```bash
+python test_cmpi_2years.py configs/AWI-ESM3-VEG-HR-Spinup.py
 ```
 
 ---
@@ -177,8 +215,8 @@ except Exception as e:
 **Ocean (3-4, 7, 13-14, 17, 19)**
 - `part3_hovm_temp.py`: Hovmöller diagram of ocean temperature
 - `part7_mld.py`: Mixed layer depth climatology
-- `part13_fesom_bias_maps.py`: Ocean temperature/salinity bias vs observations
-- `part14_fesom_salt.py`: Ocean salinity analysis
+- `part13_fesom_temp_bias.py`: Ocean temperature bias vs observations
+- `part14_fesom_salt_bias.py`: Ocean salinity bias vs observations
 - `part17_moc.py`: Meridional overturning circulation
 - `part19_ocean_temp_sections.py`: Ocean temperature cross-sections
 

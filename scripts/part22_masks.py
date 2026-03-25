@@ -132,7 +132,8 @@ for mask_var in ['RnfA.msk', 'RnfO.msk']:
         mask_data = ds[mask_var].values
         
         # These are on a regular 512x256 grid
-        lon = np.linspace(-180, 180, 512)
+        # Data seems to be 0..360, so use that range to match land contours
+        lon = np.linspace(0, 360, 512)
         lat = np.linspace(-90, 90, 256)
         lon2d, lat2d = np.meshgrid(lon, lat)
         

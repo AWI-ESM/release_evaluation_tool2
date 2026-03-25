@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
+from bg_routines.metrics import md, rmsd
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -43,14 +44,6 @@ def define_rowscol(input_paths, columns=len(input_paths), reduce=0):
     nrows = math.ceil(number_paths / columns)
     return [nrows, ncol]
 
-# Calculate Root Mean Square Deviation (RMSD)
-def rmsd(predictions, targets):
-    return np.sqrt(((predictions - targets) ** 2).mean())
-
-# Mean Deviation weighted
-def md(predictions, targets, wgts):
-    output_errors = np.average((predictions - targets), axis=0, weights=wgts)
-    return (output_errors).mean()
 
 # Load GPCP reanalysis data
 

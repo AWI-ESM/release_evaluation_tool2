@@ -80,14 +80,14 @@ from bg_routines.colormap_c2c    import *
 ############################
 
 #Name of model release
-model_version  = 'AWI-ESM3.4_rc3_HR'
+model_version  = 'AWI-ESM3-Tuning_M'
 oasis_oifs_grid_name = 'A320'
 
 #Spinup
-spinup_path    = '/work/bb1469/a270092/runtime/awiesm3-develop/final_test_spin_01/outdata/'
+spinup_path    = '/work/bb1469/a270092/runtime/awiesm3-v3.4.1/maschine_tuning/outdata/'
 spinup_name    = model_version+'_spinup'
 spinup_start   = 1350
-spinup_end     = 1359
+spinup_end     = 1351
 
 #Preindustrial Control
 pi_ctrl_path   = spinup_path
@@ -113,7 +113,7 @@ status_csv             = "logs/status.csv"  # Fixed path
 #Mesh
 mesh_name      = 'DARS2'
 grid_name      = 'TCo319'
-meshpath       = '/work/bb1469/a270089/Meshes/DARS2//'
+meshpath       = '/work/ab0246/a270092/input/fesom2/dars2/'
 mesh_file      = 'mesh.nc'
 griddes_file   = 'mesh.nc'
 abg            = [0, 0, 0]

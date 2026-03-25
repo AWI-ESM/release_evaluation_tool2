@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
+from bg_routines.metrics import md, rmsd_weighted
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -48,10 +49,6 @@ def data_to_plot(plotds, depth):
                 
     return plot_data, plot_names
 
-# Mean Deviation weighted
-def md(predictions, targets, wgts):
-    output_errors = np.average((predictions - targets), axis=0, weights=wgts)
-    return (output_errors).mean()
 
 def get_cmap(cmap=None):
     """Get the color map.
@@ -478,9 +475,13 @@ def mask_ne(lonreg2, latreg2):
         2D mask with True where the ocean is.
     """
     nearth = cfeature.NaturalEarthFeature("physical", "ocean", "50m")
-    main_geom = [contour for contour in nearth.geometries()][0]
+    # Union all ocean geometries (not just [0]) to include Antarctica and all ocean basins
+    from shapely.ops import unary_union
+    all_ocean_geoms = list(nearth.geometries())
+    main_geom = unary_union(all_ocean_geoms)
 
     mask = shapely.vectorized.contains(main_geom, lonreg2, latreg2)
+    # Manual fixes for dateline issues
     m2 = np.where(((lonreg2 == -180.0) & (latreg2 > 71.5)), True, mask)
     m2 = np.where(
         ((lonreg2 == -180.0) & (latreg2 < 70.95) & (latreg2 > 68.96)), True, m2
@@ -489,9 +490,6 @@ def mask_ne(lonreg2, latreg2):
     m2 = np.where(
         ((lonreg2 == 180.0) & (latreg2 < 70.95) & (latreg2 > 68.96)), True, m2
     )
-    # m2 = np.where(
-    #        ((lonreg2 == 180.0) & (latreg2 > -75.0) & (latreg2 < 0)), True, m2
-    #    )
     m2 = np.where(((lonreg2 == -180.0) & (latreg2 < 65.33)), True, m2)
     m2 = np.where(((lonreg2 == 180.0) & (latreg2 < 65.33)), True, m2)
 
@@ -789,10 +787,49 @@ def plot(
         else:
             raise ValueError("Inknown plot type {}".format(ptype))
 
-        # ax.coastlines(resolution = '50m',lw=0.5)
-        ax[ind].add_feature(
-            cfeature.GSHHSFeature(levels=[1], scale="low", facecolor="lightgray")
-        )
+        # For subsurface depths, create depth-aware land mask
+        # For surface, use Natural Earth land mask
+        if no_pi_mask:
+            # Subsurface: use unsmoothed land mask from ocean data at this depth
+            # Get land mask from current data
+            data_int_cyc, lon_cyc = add_cyclic_point(data_int, coord=lonreg)
+            
+            if np.ma.is_masked(data_int_cyc):
+                land_mask = data_int_cyc.mask | np.isnan(data_int_cyc.data)
+            else:
+                land_mask = np.isnan(data_int_cyc)
+            
+            if np.any(land_mask):
+                # Create binary land field without smoothing - faithful to data resolution
+                land_field = np.where(land_mask, 1.0, 0.0).astype(float)
+                
+                # Use contourf for filled land regions
+                ax[ind].contourf(
+                    lon_cyc,
+                    latreg,
+                    land_field,
+                    levels=[0.5, 1.5],
+                    colors=['lightgray'],
+                    transform=ccrs.PlateCarree(),
+                    zorder=10
+                )
+                # Add black outline
+                ax[ind].contour(
+                    lon_cyc,
+                    latreg,
+                    land_field,
+                    levels=[0.5],
+                    colors=['black'],
+                    linewidths=0.8,
+                    transform=ccrs.PlateCarree(),
+                    zorder=11
+                )
+        else:
+            # Surface: use Natural Earth coastlines
+            ax[ind].add_feature(
+                cfeature.GSHHSFeature(levels=[1], scale="low", facecolor="lightgray")
+            )
+        
         if titles:
             titles = titles.copy()
             ax[ind].set_title(titles.pop(0), fontweight='bold')
@@ -810,9 +847,9 @@ def plot(
     textbias='bias='+str(round(mdval,3))
     props = dict(boxstyle='round,pad=0.1', facecolor='white', alpha=0.5)
     ax[ind].text(0.02, 0.4, textrsmd, transform=ax[ind].transAxes, fontsize=13,
-        verticalalignment='top', bbox=props, zorder=4)
+        verticalalignment='top', bbox=props, zorder=15)
     ax[ind].text(0.02, 0.3, textbias, transform=ax[ind].transAxes, fontsize=13,
-        verticalalignment='top', bbox=props, zorder=4)
+        verticalalignment='top', bbox=props, zorder=15)
 
     cbar_ax_abs = fig.add_axes([0.15, 0.10, 0.7, 0.05])
     cbar_ax_abs.tick_params(labelsize=12)
@@ -934,6 +971,12 @@ for exp_path, exp_name in zip(input_paths, input_names):
     print(f"\nLoading model {variable} ({exp_name}) at all depths in one pass...")
     model_data_all[exp_name] = load_all_depths_fast(exp_path, variable, years, level_indices, meshpath, mesh_file)
 
+# Create surface ocean mask to prevent interpolation bleeding at depth
+# Get surface (0m) data to define maximum ocean extent
+surface_level_idx = depth_to_level[0]
+surface_reference = reference_data_all[surface_level_idx]
+surface_mask = ~np.isnan(surface_reference)  # True where surface has ocean
+
 # Now loop through depths for plotting only
 for depth in depths:
     level_idx = depth_to_level[depth]
@@ -957,9 +1000,18 @@ for depth in depths:
     # Get pre-loaded reference data for this depth
     data_reference = reference_data_all[level_idx]
     
+    # Apply surface mask to prevent interpolation bleeding at subsurface depths
+    if depth > 0:
+        data_reference = np.where(surface_mask, data_reference, np.nan)
+    
     for exp_path, exp_name in zip(input_paths, input_names):
         # Get pre-loaded model data for this depth
         data_test = model_data_all[exp_name][level_idx]
+        
+        # Apply surface mask to prevent interpolation bleeding at subsurface depths
+        if depth > 0:
+            data_test = np.where(surface_mask, data_test, np.nan)
+        
         data_difference= data_test - data_reference
         title = exp_name+" - "+reference_name
         plotds[depth][title] = {}
@@ -970,11 +1022,10 @@ for depth in depths:
             plotds[depth][title]['nodiff'] = False
 
     mesh_data = Dataset(meshpath+'/'+mesh_file)
-    wgts = np.array(mesh_data['cell_area'][:]).flatten()  # Ensure it's 1D
-    wgts = np.broadcast_to(wgts, data_test.shape)  # Expand to match data shape
-
-    wgts=mesh_data['cell_area']
-    rmsdval = sqrt(mean_squared_error(data_test, data_reference, sample_weight=np.array(wgts)))
+    wgts = np.array(mesh_data['cell_area'][:]).flatten()
+    
+    # Use NaN-aware metric functions
+    rmsdval = rmsd_weighted(data_test, data_reference, wgts)
     mdval = md(data_test, data_reference, wgts)
 
     sfmt = ticker.ScalarFormatter(useMathText=True)
@@ -998,6 +1049,8 @@ for depth in depths:
 
 
     if not identical:
+        # Use Natural Earth mask for surface, depth-aware mask for subsurface
+        use_depth_mask = (depth > 0)
         plot(mesh, 
             plot_data,
             rowscol=rowscol,
@@ -1010,7 +1063,8 @@ for depth in depths:
             units = units,
             titles = title2,
             rmsdval = rmsdval,
-            mdval = mdval);
+            mdval = mdval,
+            no_pi_mask = use_depth_mask)  # Use NE for surface, depth-aware for subsurface
 
 
     if ofile is not None:
