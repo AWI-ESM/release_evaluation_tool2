@@ -32,7 +32,6 @@ import subprocess
 import argparse
 from natsort import natsorted
 import shutil
-from bg_routines.config_loader import model_version
 
 ############################
 # Slurm Configuration      #
@@ -43,8 +42,7 @@ SBATCH_SETTINGS = """\
 #SBATCH --job-name={job_name}
 #SBATCH --output=logs/{job_name}.log
 #SBATCH --error=logs/{job_name}.log
-#SBATCH --time=02:00:00
-#SBATCH --mem=64G
+#SBATCH --time=01:00:00
 #SBATCH --ntasks=128
 #SBATCH --ntasks-per-node=128
 #SBATCH --partition=compute
