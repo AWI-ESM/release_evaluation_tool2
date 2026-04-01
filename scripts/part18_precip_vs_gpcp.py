@@ -61,17 +61,13 @@ for exp_path, exp_name  in zip(input_paths, input_names):
     data[exp_name] = {}
     for v in var:
         datat = []
-        t = []
-        temporary = []
         for exp in tqdm(exps):
-
             path = exp_path+'/oifs/atm_remapped_1m_'+v+'_1m_'+f'{exp:04d}-{exp:04d}.nc'
-            temporary = dask.delayed(load_parallel)(v,path)
-            t.append(temporary)
-
-        with ProgressBar():
-            datat = dask.compute(t)
-        data[exp_name][v] = np.array([np.squeeze(d) for d in datat[0]])
+            # Process sequentially to avoid CDO temp file race condition
+            data_single = load_parallel(v, path)
+            datat.append(np.squeeze(data_single))
+        
+        data[exp_name][v] = np.array(datat)
         
 data_model_mean = np.mean(data[historic_name]['cp'] + \
                           data[historic_name]['lsp'],axis=0)

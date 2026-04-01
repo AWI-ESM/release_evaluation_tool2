@@ -46,7 +46,6 @@ from cartopy import config
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.util import add_cyclic_point
-from mpl_toolkits.basemap import Basemap
 import cmocean as cmo
 from cmocean import cm as cmof
 import matplotlib.pylab as pylab
@@ -80,25 +79,25 @@ from bg_routines.colormap_c2c    import *
 ############################
 
 #Name of model release
-model_version  = 'awicm3_test_albedo'
+model_version  = 'AWI-ESM3-VEG-LR-Spinup'
 oasis_oifs_grid_name = 'A096'
 
 #Spinup
-spinup_path    = '/albedo/work/user/jstreffi/runtime/awiesm3-develop/test_collect_txt_05/outdata/'
+spinup_path    = '/work/bb1469/a270270/runtime/awiesm3-v3.4/AWIESM700_CMIP7_SPINUP_TCO95_CORE3/outdata/'
 spinup_name    = model_version+'_spinup'
-spinup_start   = 1900
-spinup_end     = 1900
+spinup_start   = 1350
+spinup_end     = 1849
 
 #Preindustrial Control
 pi_ctrl_path   = spinup_path
 pi_ctrl_name   = model_version+'_pi-control'
-pi_ctrl_start  = spinup_start
+pi_ctrl_start  = spinup_end-25
 pi_ctrl_end    = spinup_end
 
 #Historic
 historic_path  = spinup_path
 historic_name  = model_version+'_historic'
-historic_start = spinup_start
+historic_start = spinup_end-25
 historic_end   = spinup_end
 
 
@@ -106,23 +105,23 @@ historic_end   = spinup_end
 reanalysis             = 'ERA5'
 remap_resolution       = '512x256'
 dpi                    = 300
-historic_last25y_start = historic_start
+historic_last25y_start = historic_end-25
 historic_last25y_end   = historic_end
 status_csv             = "log/status.csv"
 
 #Mesh
 mesh_name      = 'CORE3'
 grid_name      = 'TCO95'
-meshpath       = '/albedo/pool/fesom2/core3/'
+meshpath       = '/work/ab0246/a270092/input/fesom2/core3/'
 mesh_file      = 'mesh.nc'
 griddes_file   = 'mesh.nc'
 abg            = [0, 0, 0]
-reference_path = '/albedo/work/user/jstreffi/climatologies/CORE3/'
+reference_path = '/work/ab0246/a270092/postprocessing/climatologies/CORE3/'
 reference_name = 'clim'
 reference_years= 1958
 accumulation_period = 21600
 
-observation_path = '/albedo/work/user/jstreffi/obs/'
+observation_path = '/work/ab0246/a270092/obs/'
 
 tool_path      = os.getcwd()
 out_path       = tool_path+'/output/'+model_version+'/'

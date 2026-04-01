@@ -51,7 +51,15 @@ def md(predictions, targets, wgts=None):
     valid = ~np.isnan(diff)
     if not np.any(valid):
         return np.nan
-    return np.average(diff[valid], weights=wgts[valid])
+    
+    # Broadcast weights to match data shape if needed
+    if wgts.ndim < diff.ndim:
+        # Assume weights are latitude weights, broadcast across longitude
+        wgts_broadcast = np.broadcast_to(wgts[:, np.newaxis], diff.shape)
+    else:
+        wgts_broadcast = wgts
+    
+    return np.average(diff[valid], weights=wgts_broadcast[valid])
 
 
 def rmsd_weighted(predictions, targets, wgts):
@@ -75,5 +83,13 @@ def rmsd_weighted(predictions, targets, wgts):
     valid = ~np.isnan(diff)
     if not np.any(valid):
         return np.nan
+    
+    # Broadcast weights to match data shape if needed
+    if wgts.ndim < diff.ndim:
+        # Assume weights are latitude weights, broadcast across longitude
+        wgts_broadcast = np.broadcast_to(wgts[:, np.newaxis], diff.shape)
+    else:
+        wgts_broadcast = wgts
+    
     squared_diff = diff[valid] ** 2
-    return np.sqrt(np.average(squared_diff, weights=wgts[valid]))
+    return np.sqrt(np.average(squared_diff, weights=wgts_broadcast[valid]))

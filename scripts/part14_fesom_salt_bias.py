@@ -860,14 +860,43 @@ def plot(
         label.set_visible(False)
     return ax,latreg
 
-# Map depth to nearest level index in mesh
-# zlev: 0, -5, -10, ..., -100 (idx 12), ..., -1040 (idx 33), ..., -4150 (idx 48)
-depth_to_level = {
-    0: 1,      # 0m exact
-    100: 12,   # -100m exact
-    1000: 33,  # -1040m (nearest to -1000m)
-    4000: 48   # -4150m (nearest to -4000m)
-}
+def get_closest_depth_levels(sample_file, target_depths, meshpath, mesh_file):
+    """Find the closest depth level indices for target depths.
+    
+    Args:
+        sample_file: Path to a sample data file to read depth levels from
+        target_depths: List of target depths in meters (e.g., [0, 100, 1000, 4000])
+        meshpath: Path to mesh directory
+        mesh_file: Mesh filename
+        
+    Returns:
+        dict: {target_depth: (closest_level_idx, actual_depth)}
+    """
+    import xarray as xr
+    
+    # Read depth levels from the sample file
+    with xr.open_dataset(sample_file) as ds:
+        if 'nz1' in ds:
+            depth_levels = ds['nz1'].values  # Depth at layer midpoint
+        elif 'depth' in ds:
+            depth_levels = ds['depth'].values
+        else:
+            raise ValueError(f"Could not find depth coordinate in {sample_file}")
+    
+    print(f"  Found {len(depth_levels)} depth levels in data")
+    print(f"  Depth range: {depth_levels.min():.1f}m to {depth_levels.max():.1f}m")
+    
+    # Find closest level for each target depth
+    depth_mapping = {}
+    for target in target_depths:
+        # Find index of closest depth (1-indexed for CDO sellevidx)
+        distances = np.abs(depth_levels - target)
+        closest_idx = np.argmin(distances) + 1  # CDO uses 1-based indexing
+        actual_depth = depth_levels[closest_idx - 1]
+        depth_mapping[target] = (closest_idx, actual_depth)
+        print(f"    {target}m → level {closest_idx} (actual: {actual_depth:.1f}m)")
+    
+    return depth_mapping
 
 def load_all_depths_fast(exp_path, variable, years, level_indices, meshpath, mesh_file):
     """Load and average data at multiple depth levels using CDO + Dask parallel.
@@ -883,6 +912,11 @@ def load_all_depths_fast(exp_path, variable, years, level_indices, meshpath, mes
     file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years]
     existing = [f for f in file_paths if os.path.exists(f)]
     
+    print(f"  DEBUG: Looking for files like: {file_paths[0] if file_paths else 'N/A'}")
+    print(f"  DEBUG: Found {len(existing)} files out of {len(file_paths)} expected")
+    if existing:
+        print(f"  DEBUG: First file: {existing[0]}")
+    
     if not existing:
         raise ValueError(f"No {variable} files found")
     
@@ -895,19 +929,27 @@ def load_all_depths_fast(exp_path, variable, years, level_indices, meshpath, mes
     
     def _process_one(fpath):
         """CDO: select all levels + time mean."""
-        # Select all levels at once
-        data = cdo.timmean(
-            input=f'-sellevidx,{level_list} -setgrid,{meshpath}/{mesh_file} {fpath}',
-            returnArray=variable
-        )
-        # Return dict with data for each level
-        result = {}
-        
-        # CDO with sellevidx returns (time, npoints, nlevels) or (npoints, nlevels)
-        # After timmean, we get (npoints, nlevels) but might have extra dims
-        
-        # Remove all singleton dimensions
-        data = np.squeeze(data)
+        try:
+            # Select all levels at once
+            data = cdo.timmean(
+                input=f'-sellevidx,{level_list} -setgrid,{meshpath}/{mesh_file} {fpath}',
+                returnArray=variable
+            )
+            # Return dict with data for each level
+            result = {}
+            
+            # DEBUG
+            if rd.random() < 0.05:  # Print for ~5% of files to avoid spam
+                print(f"    DEBUG _process_one: raw data shape={data.shape}, dtype={data.dtype}")
+            
+            # CDO with sellevidx returns (time, npoints, nlevels) or (npoints, nlevels)
+            # After timmean, we get (npoints, nlevels) but might have extra dims
+            
+            # Remove all singleton dimensions
+            data = np.squeeze(data)
+        except Exception as e:
+            print(f"    ERROR in _process_one for {os.path.basename(fpath)}: {e}")
+            return {}
         
         # Now we should have (npoints, nlevels) for multiple levels or (npoints,) for single level
         if data.ndim == 2:
@@ -928,22 +970,32 @@ def load_all_depths_fast(exp_path, variable, years, level_indices, meshpath, mes
         
         return result
     
-    # Parallel processing
+    # Sequential processing to avoid CDO temp file race condition
     annual_data = {idx: [] for idx in level_indices}
-    for i in range(0, len(existing), chunk_size):
-        chunk = existing[i:i + chunk_size]
-        tasks = [dask.delayed(_process_one)(f) for f in chunk]
-        with ProgressBar():
-            results = dask.compute(*tasks, scheduler='threads')
-        # Aggregate by level
-        for result_dict in results:
-            for level_idx, data in result_dict.items():
-                annual_data[level_idx].append(data)
+    for fpath in tqdm(existing, desc=f"  Processing {variable}"):
+        result_dict = _process_one(fpath)
+        for level_idx, data in result_dict.items():
+            annual_data[level_idx].append(data)
     
     # Average over years for each level
     averaged = {}
     for level_idx, data_list in annual_data.items():
-        averaged[level_idx] = np.mean(data_list, axis=0).astype(np.float32)
+        print(f"    DEBUG averaging level {level_idx}: len(data_list)={len(data_list)}")
+        if data_list:
+            print(f"      First item: shape={data_list[0].shape}, dtype={data_list[0].dtype}")
+            if len(data_list) > 1:
+                print(f"      Second item: shape={data_list[1].shape}")
+        
+        # Convert fill values to NaN before averaging
+        cleaned_data = []
+        for data in data_list:
+            # FESOM fill value is typically 9.96920996838687e+36
+            data_clean = np.where(np.abs(data) > 1e20, np.nan, data)
+            cleaned_data.append(data_clean)
+        
+        avg_data = np.nanmean(cleaned_data, axis=0).astype(np.float32)
+        print(f"      Result: shape={avg_data.shape if hasattr(avg_data, 'shape') else 'scalar'}")
+        averaged[level_idx] = avg_data
     
     return averaged
 
@@ -959,9 +1011,18 @@ mesh = pf.load_mesh(meshpath, abg=abg, usepickle=True, usejoblib=False)
 from pprint import pprint
 pprint(vars(mesh))
 
-# Load all depth levels at once for reference data
+# Dynamically find closest depth levels
 depths = [0, 100, 1000, 4000]
+print(f"\nFinding closest depth levels for {depths}...")
+
+# Use first available file to determine depth levels
+sample_file = f"{reference_path}/{variable}.fesom.{reference_years if isinstance(reference_years, int) else reference_years[0] if hasattr(reference_years, '__iter__') else reference_years}.nc"
+depth_mapping = get_closest_depth_levels(sample_file, depths, meshpath, mesh_file)
+
+# Extract level indices and create reverse mapping
+depth_to_level = {d: depth_mapping[d][0] for d in depths}
 level_indices = [depth_to_level[d] for d in depths]
+
 print(f"\nLoading reference {variable} at all depths in one pass...")
 reference_data_all = load_all_depths_fast(reference_path, variable, reference_years, level_indices, meshpath, mesh_file)
 
@@ -970,6 +1031,10 @@ model_data_all = {}
 for exp_path, exp_name in zip(input_paths, input_names):
     print(f"\nLoading model {variable} ({exp_name}) at all depths in one pass...")
     model_data_all[exp_name] = load_all_depths_fast(exp_path, variable, years, level_indices, meshpath, mesh_file)
+    print(f"  DEBUG loaded data keys: {model_data_all[exp_name].keys()}")
+    for lev_idx in level_indices:
+        data = model_data_all[exp_name][lev_idx]
+        print(f"    Level {lev_idx}: shape={data.shape}, valid={np.sum(~np.isnan(data))}, type={type(data)}")
 
 # Create surface ocean mask to prevent interpolation bleeding at depth
 # Get surface (0m) data to define maximum ocean extent
@@ -1024,9 +1089,16 @@ for depth in depths:
     mesh_data = Dataset(meshpath+'/'+mesh_file)
     wgts = np.array(mesh_data['cell_area'][:]).flatten()
     
+    # Debug: check shapes and value ranges
+    print(f"Debug - depth={depth}: data_test.shape={data_test.shape}, data_reference.shape={data_reference.shape}, wgts.shape={wgts.shape}")
+    print(f"  data_test has {np.sum(~np.isnan(data_test))} valid values, data_reference has {np.sum(~np.isnan(data_reference))} valid values")
+    print(f"  data_test range: [{np.nanmin(data_test):.2f}, {np.nanmax(data_test):.2f}]")
+    print(f"  data_reference range: [{np.nanmin(data_reference):.2f}, {np.nanmax(data_reference):.2f}]")
+    
     # Use NaN-aware metric functions
     rmsdval = rmsd_weighted(data_test, data_reference, wgts)
     mdval = md(data_test, data_reference, wgts)
+    print(f"  rmsdval={rmsdval}, mdval={mdval}")
 
     sfmt = ticker.ScalarFormatter(useMathText=True)
     sfmt.set_powerlimits((-3, 4))

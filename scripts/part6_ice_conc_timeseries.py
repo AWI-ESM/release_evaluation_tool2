@@ -122,7 +122,7 @@ ax1.set_title('Sea ice extent', fontsize=17,fontweight='bold')
 
 #fig.text(-0.04, 0.5, 'Sea ice extent [$1000 km^2$]', fontsize=13, va='center', rotation=90)
 #fig.text(0.5, -0.02, 'Year', fontsize=13, ha='center', rotation=0)
-ax1.set_ylabel('Sea ice extent [$1000 km^2$]', fontsize=17)
+ax1.set_ylabel('Sea ice extent [$10^6$ km$^2$]', fontsize=17)
 ax1.set_xlabel('Year', fontsize=17)
 
 ax1.yaxis.grid(color='gray', linestyle='dashed')
@@ -253,7 +253,7 @@ ax1.set_title('Sea ice extent', fontsize=17,fontweight='bold')
 
 #fig.text(-0.04, 0.5, 'Sea ice extent [$1000 km^2$]', fontsize=13, va='center', rotation=90)
 #fig.text(0.5, -0.02, 'Year', fontsize=13, ha='center', rotation=0)
-ax1.set_ylabel('Sea ice extent [$1000 km^2$]', fontsize=17)
+ax1.set_ylabel('Sea ice extent [$10^6$ km$^2$]', fontsize=17)
 ax1.set_xlabel('Year', fontsize=17)
 
 ax1.yaxis.grid(color='gray', linestyle='dashed')
