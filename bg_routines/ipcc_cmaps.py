@@ -9,15 +9,11 @@ import os
 import numpy as np
 import matplotlib.colors as mcolors
 
-# release_evaluation_tool2/bg_routines/ -> ../../cmpitool/cmpitool/data/...
-_DATA_DIR = os.path.normpath(
-    os.path.join(
-        os.path.dirname(__file__),
-        "..", "..",
-        "cmpitool", "cmpitool", "data", "ipcc_colormaps",
-        "continuous_colormaps_rgb_0-1",
-    )
-)
+# Bundled subset of the IPCC AR6/AR7 colormap library (continuous,
+# rgb 0-1, ~150 KB). Lives in bg_routines/ rather than under the
+# cmpitool submodule so reval does not depend on a particular
+# cmpitool revision.
+_DATA_DIR = os.path.join(os.path.dirname(__file__), "ipcc_colormaps_data")
 
 _cache = {}
 
