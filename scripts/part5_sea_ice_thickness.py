@@ -78,7 +78,10 @@ for exp_path, exp_name  in zip(input_paths, input_names):
         t.append(temporary)
 
     with ProgressBar():
-        datat = dask.compute(t)
+        # Default dask scheduler is threads; cdo's CdoTempfileStore finalizer
+        # races with readArray under threads and randomly deletes temp files
+        # mid-read. Force synchronous for cdo-backed delayed tasks.
+        datat = dask.compute(t, scheduler='synchronous')
     data[exp_name] = np.array([np.squeeze(d) for d in datat[0]])
 
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):

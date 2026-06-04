@@ -80,24 +80,28 @@ def load_yearly_data_simple(path, var, years, pattern, freq):
     try:
         print(f"Loading {len(files)} files for {var}...")
         
-        # Load files with explicit time decoding to handle mixed calendar types
-        ds = xr.open_mfdataset(files, combine="by_coords", parallel=False, 
-                             chunks={'time_counter': 12}, 
+        # Load files with explicit time decoding to handle mixed calendar types.
+        # AWI-ESM3 XIOS uses `time_counter`; the AWI-ESM2 echam preprocessor
+        # emits `time` instead, so chunk and groupby on whichever exists.
+        ds = xr.open_mfdataset(files, combine="by_coords", parallel=False,
                              decode_times=True, use_cftime=True,
                              combine_attrs='drop_conflicts')
-        
+
+        time_dim = 'time_counter' if 'time_counter' in ds.dims else 'time'
+        ds = ds.chunk({time_dim: 12})
+
         # Get the variable data
         var_data = ds[var]
-        
+
         # Normalize by accumulation period ONLY for flux variables (not temperature)
         if var != '2t':  # Don't normalize temperature
             var_data = var_data / accumulation_period
-        
+
         # Calculate global area mean
         global_mean = global_area_mean(var_data)
-        
+
         # Convert to yearly means using groupby
-        yearly_data = global_mean.groupby('time_counter.year').mean()
+        yearly_data = global_mean.groupby(f'{time_dim}.year').mean()
         
         # Force computation to avoid lazy evaluation
         yearly_data = yearly_data.compute()
@@ -206,13 +210,31 @@ if __name__ == "__main__":
     print(f"SLHF (latent heat):      min={np.min(slhf_vals):>10.3f}, max={np.max(slhf_vals):>10.3f}, mean={np.mean(slhf_vals):>10.3f}")
     print(f"SF (snowfall):           min={np.min(sf_vals):>10.3f}, max={np.max(sf_vals):>10.3f}, mean={np.mean(sf_vals):>10.3f}")
     
-    sf_heat_flux = sf_vals * 333550000  # Heat of fusion conversion
+    # Choose sf-to-heat-flux conversion factor based on the raw sf units.
+    #   AWI-ESM3 XIOS:           sf in 'm' (water-equivalent depth, accumulated)
+    #                            -> after /accumulation_period it's m/s,
+    #                               so multiply by rho_water * Lf = 1000 * 334_000.
+    #   AWI-ESM2 echam preproc:  sf in 'kg m-2 s-1' (mass flux, accumulation_period=1)
+    #                            -> multiply by Lf = 334_000.
+    sf_first_file = os.path.join(spinup_path + "/oifs", patterns['sf'].format(year=years[0]))
+    try:
+        _sf_units = xr.open_dataset(sf_first_file)['sf'].attrs.get('units', '').strip()
+    except Exception:
+        _sf_units = ''
+    if _sf_units == 'kg m-2 s-1':
+        sf_conv = 334_000.0           # heat of fusion of ice
+    elif _sf_units == 'm':
+        sf_conv = 333_550_000.0       # rho_water * heat of fusion (water-equivalent depth)
+    else:
+        print(f"WARN: unrecognized sf units '{_sf_units}', defaulting to AWI-ESM3 (rho*Lf=3.34e8)")
+        sf_conv = 333_550_000.0
+    print(f"sf units = '{_sf_units}' -> sf_conv = {sf_conv:g}")
+    sf_heat_flux = sf_vals * sf_conv
     print(f"SF heat flux (W/m²):     min={np.min(sf_heat_flux):>10.3f}, max={np.max(sf_heat_flux):>10.3f}, mean={np.mean(sf_heat_flux):>10.3f}")
-    
+
     surface = ssr_vals + str_vals + sshf_vals + slhf_vals - sf_heat_flux
     print(f"Surface total:           min={np.min(surface):>10.3f}, max={np.max(surface):>10.3f}, mean={np.mean(surface):>10.3f}")
-    
-    #multiply by heat of fusion: 333550000 mJ/kg - then we get the flux in W/m2
+
     tsr_vals = data['tsr']
     ttr_vals = data['ttr']
     
