@@ -1,5 +1,5 @@
 #!/bin/bash
-# Phase 2b of PORTING_AWI-ESM2.md: produce pressure-level 3D fields
+# Pressure-level 3D fields
 # (u, t, v, optionally zg) from echam6 native spectral output.
 #
 # Echam6 stores 3D atmosphere as spectral state (st temperature, svo

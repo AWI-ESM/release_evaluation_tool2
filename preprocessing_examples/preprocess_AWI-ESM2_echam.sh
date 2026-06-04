@@ -3,7 +3,7 @@
 # atm_remapped_1m_<var>_1m_<YYYY>-<YYYY>.nc layout the reval part
 # scripts expect (the same layout AWI-ESM3 XIOS emits directly).
 #
-# This is Phase 2a (surface fields) of PORTING_AWI-ESM2.md. Phase 2b
+# Handles surface fields (echam stream). Pressure-level 3D fields
 # (3D winds + zg) needs cdo afterburner for spectral->grid plus
 # pressure-level interp and is handled in a separate script.
 #

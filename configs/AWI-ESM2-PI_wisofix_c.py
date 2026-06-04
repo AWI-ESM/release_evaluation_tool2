@@ -147,20 +147,17 @@ data = xr.open_dataset(meshpath+'/fesom.mesh.diag.nc')
 # Per-config script overrides (read by reval.py via a lightweight ast
 # walk, so only bool-literal values are accepted). For AWI-ESM2 we swap
 # the LPJ-GUESS land scripts for jsbach replacements and disable
-# part22_masks (OASIS grid configs differ; not worth porting for now).
+# part22_masks (OASIS grid configs differ between AWI-ESM2 and AWI-ESM3).
 scripts_overrides = {
     # part11/part12 require 3D atmosphere fields on pressure levels
-    # (atm_remapped_1m_pl_<u|t>_1m_pl_*.nc). Phase 2b (cdo afterburner
-    # for spectral->grid + pressure-level interp + zg hydrostatic
-    # integration) hasn't been built yet, so disable until then.
+    # (atm_remapped_1m_pl_<u|t>_1m_pl_*.nc) which the AWI-ESM2 echam
+    # preprocessor does not currently emit.
     "part11_zonal_plots.py":     False,
     "part12_qbo.py":             False,
     "part22_masks.py":           False,
     # part4_cmpi.py expects to re-run the AWI-CM3 XIOS preprocessor against
-    # `model_version` -- for this run, cmpitool was already executed via
-    # cmpitool/run_PI_wisofix_c.py and the result lives in
-    # cmpitool/eval/ERA5/PI_wisofix_c.csv (note the name without prefix).
-    # Wiring part4 to consume that pre-existing csv is Phase 3 follow-up.
+    # `model_version`; for AWI-ESM2 runs cmpitool is executed standalone and
+    # its csv lives in cmpitool/eval/ERA5/ already.
     "part4_cmpi.py":             False,
     "part24_lpjg_lai.py":        False,
     "part25_lpjg_carbon.py":     False,
