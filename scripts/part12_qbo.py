@@ -3,6 +3,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
 from bg_routines.metrics import md, rmsd
+from bg_routines.ipcc_cmaps import get_bias_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -18,7 +19,7 @@ res=[320, 160]
 clim='ERA5'
 
 clim_var='U'
-title='AWI-CM3 equatorial zonal wind evolution'
+title=f'{model_version} equatorial zonal wind evolution'
 climatology_path =  observation_path+'/era5/netcdf/'
 variable = 'u'
 levels = np.linspace(-20, 20, 11)
@@ -124,7 +125,7 @@ for exp_path, exp_name  in zip(input_paths, input_names):
             t.append(temporary)
 
         with ProgressBar():
-            datat = dask.compute(*t, scheduler='threads')
+            datat = dask.compute(*t, scheduler='synchronous')
         data[exp_name][variable] = np.squeeze(datat)
         
 data_model = OrderedDict()
@@ -154,7 +155,7 @@ time = np.arange(historic_last25y_start, historic_last25y_end+1, 0.0834)
 for key in input_names:
 
     axes[i]=plt.subplot(nrows,ncol,i+1)
-    imf=plt.contourf(time,x, data_model_mean[exp_name].T, cmap=plt.cm.PuOr_r, 
+    imf=plt.contourf(time,x, data_model_mean[exp_name].T, cmap=get_bias_cmap('u'),
                      levels=levels, extend='both',
                      zorder=1)
     line_colors = ['black' for l in imf.levels]
@@ -186,7 +187,7 @@ for label in cb.ax.xaxis.get_ticklabels()[::2]:
     label.set_visible(False)
 
     
-ofile='AWI-CM3-qbo.png'
+ofile=f'{model_version}-qbo.png'
     
 if ofile is not None:
     plt.savefig(out_path+ofile, dpi=dpi,bbox_inches='tight')
@@ -228,7 +229,7 @@ time = np.arange(1989, 2014, 0.0803)
 for key in input_names:
 
     axes[i]=plt.subplot(nrows,ncol,i+1)
-    imf=plt.contourf(time,x, data_model_mean[exp_name].T, cmap=plt.cm.PuOr_r, 
+    imf=plt.contourf(time,x, data_model_mean[exp_name].T, cmap=get_bias_cmap('u'),
                      levels=levels, extend='both',
                      zorder=1)
     line_colors = ['black' for l in imf.levels]

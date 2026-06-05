@@ -100,12 +100,37 @@ for ((yyyy=starty; yyyy<=endy; yyyy++)); do
     # --reduce_dim drops cdo's degenerate length-1 height/level axes,
     # which otherwise leak into the part-script ndarray shapes (notably
     # t_2m carries a `height_2 = 1` dim that breaks part8/16/20).
+    #
+    # Special case: clct -> tcc. ICON's clct is total cloud cover in
+    # percent (0..100, units="%"), but reval's part10_clt_vs_modis.py
+    # expects tcc as a 0..1 fraction (it multiplies by 100 for display
+    # vs MODIS). So for clct we additionally divide by 100 and overwrite
+    # the units attribute to "1" (dimensionless).
     for src_name in "${!ren[@]}"; do
         rname=${ren[$src_name]}
         out="$outdir/atm_remapped_1m_${rname}_1m_${yyyy}-${yyyy}.nc"
         [[ -f $out ]] && continue
-        "$CDO" -O -f nc --reduce_dim -chname,"${src_name},${rname}" -selname,"$src_name" \
-            "$year_remapped" "$out"
+        if [[ $src_name == "clct" ]]; then
+            # Divide by 100 to convert %->fraction. We then force the units
+            # attribute to the *string* "1" via a python netCDF4 step,
+            # because cdo's setattribute auto-detects "1" as a numeric and
+            # CF-compliant readers (xarray) choke on a numeric units attr.
+            "$CDO" -O -f nc --reduce_dim \
+                -divc,100 \
+                -chname,"${src_name},${rname}" -selname,"$src_name" \
+                "$year_remapped" "$out"
+            python3 -c "
+import netCDF4 as nc, sys
+with nc.Dataset(sys.argv[1], 'r+') as ds:
+    v = ds.variables['${rname}']
+    if 'units' in v.ncattrs():
+        v.delncattr('units')
+    v.units = '1'
+" "$out"
+        else
+            "$CDO" -O -f nc --reduce_dim -chname,"${src_name},${rname}" -selname,"$src_name" \
+                "$year_remapped" "$out"
+        fi
     done
 
     # Synthetic frozen precip: sf = snow_gsp + snow_con + ice_gsp

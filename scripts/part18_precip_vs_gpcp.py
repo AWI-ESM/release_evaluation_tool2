@@ -4,6 +4,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
 from bg_routines.metrics import md, rmsd
+from bg_routines.ipcc_cmaps import get_bias_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -25,7 +26,7 @@ exps=[]
 for year in range(historic_last25y_start, historic_last25y_end + 1):
     exps.append(year)
         
-figsize=(6, 4.5)
+figsize=(9, 5)
 res = [180, 90]
 var = ['cp', 'lsp']
 variable_clim = 'pr'
@@ -48,12 +49,20 @@ def define_rowscol(input_paths, columns=len(input_paths), reduce=0):
 # Load GPCP reanalysis data
 
 GPCP_path = climatology_path+climatology_files[0]
+# NOTE the GPCP file mislabels units: pr.attrs['units'] = "mm/day" BUT
+# the actual values are kg/m^2/s (~2.5e-5). The *86400 below recovers
+# real mm/day; trust the data scale, not the metadata string.
 GPCP_data = cdo.yearmean(input="-remapcon,r"+str(res[0])+"x"+str(res[1])+" "+str(GPCP_path),returnArray=variable_clim)*86400
 
 
-# Load model Data
+# Load model Data. Model precip is in kg/m^2/s (AWI-ESM2 echam, ICON,
+# AWI-ESM3 XIOS post-decode all converge on this). 1 kg/m^2 of water = 1 mm
+# water-column depth, so kg/m^2/s * 86400 -> mm/day directly. Configs
+# expose this via `precip_to_mm_per_day` (=86400 for kg/m^2/s; =86400000
+# for the old m/s convention some AWI-CM3 paths used).
 def load_parallel(variable,path):
-    data1 = (cdo.timmean(input="-remapcon,r"+str(res[0])+"x"+str(res[1])+" "+str(path),returnArray=variable)/accumulation_period)*1000*86400
+    _conv = globals().get('precip_to_mm_per_day', 86400.0)
+    data1 = (cdo.timmean(input="-remapcon,r"+str(res[0])+"x"+str(res[1])+" "+str(path),returnArray=variable)/accumulation_period)*_conv
     return data1
 
 data = OrderedDict()
@@ -96,7 +105,7 @@ mdval = md(data_model_mean,data_reanalysis_mean,wgts)
 
 nrows, ncol = define_rowscol(input_paths)
 fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize,
-                         subplot_kw={'projection': ccrs.PlateCarree()})
+                         subplot_kw={'projection': ccrs.EqualEarth()})
 
 if isinstance(axes, np.ndarray):
     axes = axes.flatten()
@@ -108,11 +117,12 @@ for i, exp_name in enumerate(input_names):
     print(exp_name)
     
     ax = axes[i]
+    ax.set_global()
     ax.add_feature(cfeature.COASTLINE, zorder=3)
 
     # Contour plot
-    imf = ax.contourf(lon, lat, data_model_mean - data_reanalysis_mean, 
-                       cmap=plt.cm.PuOr, levels=levels, extend='both',
+    imf = ax.contourf(lon, lat, data_model_mean - data_reanalysis_mean,
+                       cmap=get_bias_cmap('pr'), levels=levels, extend='both',
                        transform=ccrs.PlateCarree(), zorder=1)
     
     line_colors = ['black' for _ in imf.levels]
@@ -126,20 +136,20 @@ for i, exp_name in enumerate(input_names):
 
     # Gridlines
     gl = ax.gridlines(draw_labels=True, linewidth=1, color='gray', alpha=0.2, linestyle='-')
-    gl.xlabels_bottom = False
+    gl.bottom_labels = False
 
     # Bias & RMSD Text
     textrsmd = f'rmsd={round(rmsdval, 3)}'
     textbias = f'bias={round(mdval, 3)}'
     props = dict(boxstyle='round,pad=0.1', facecolor='white', alpha=0.5)
 
-    ax.text(0.02, 0.4, textrsmd, transform=ax.transAxes, fontsize=13,
+    ax.text(0.12, 0.22, textrsmd, transform=ax.transAxes, fontsize=13,
             verticalalignment='top', bbox=props, zorder=4)
-    ax.text(0.02, 0.3, textbias, transform=ax.transAxes, fontsize=13,
+    ax.text(0.12, 0.15, textbias, transform=ax.transAxes, fontsize=13,
             verticalalignment='top', bbox=props, zorder=4)
 
 # Colorbar
-cbar_ax_abs = fig.add_axes([0.15, 0.11, 0.7, 0.05])
+cbar_ax_abs = fig.add_axes([0.15, 0.06, 0.7, 0.04])
 cbar_ax_abs.tick_params(labelsize=12)
 cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal', ticks=levels)
 cb.set_label(label="mm/day", size=14)

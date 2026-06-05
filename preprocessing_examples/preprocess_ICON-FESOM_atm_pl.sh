@@ -54,11 +54,13 @@ mkdir -p "$tmpdir"
 # Use the szip-capable cdo build (one binary across all preprocessors).
 CDO=/work/ab0246/a270092/software/cdo_build/cdo-1.9.10/src/cdo
 
-# Target pressure levels in Pa:
-#   1000, 850, 700, 500, 250, 100, 50, 10 hPa
-# Broad enough for both the zonal-mean bias plots (tropo + lower strato)
-# and the QBO equatorial-strato evolution (down to 10 hPa).
-plevs_pa="100000,85000,70000,50000,25000,10000,5000,1000"
+# Target pressure levels in Pa (19-level ERA5 standard set):
+#   1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100,
+#   70, 50, 30, 20, 10, 5, 1 hPa
+# Matches the ERA5 reanalysis plev count so part11_zonal_plots.py rmsd
+# arrays broadcast cleanly (8-vs-19 mismatch was a hard error before),
+# and the upper-strato levels (down to 1 hPa) still cover QBO needs.
+plevs_pa="100000,92500,85000,70000,60000,50000,40000,30000,25000,20000,15000,10000,7000,5000,3000,2000,1000,500,100"
 
 # ICON atm_3d_ml short name -> reval/IFS short name mapping.
 # part11_zonal_plots wants u, t; part12_qbo wants u.  Include v and q as
@@ -93,6 +95,10 @@ for ((yyyy=starty; yyyy<=endy; yyyy++)); do
     #   selname,<vars>         drop unused fields (clc, rh, geopot, ...)
     #   ap2pl,<plevs>          interp to pressure surfaces using `pres`
     #   monmean                collapse 365 daily steps to 12 months
+    #   seltimestep,1/12       drop the trailing partial-month boundary
+    #                          fragment that monmean emits when the source
+    #                          twice-daily file spans into the next year
+    #                          (part12_qbo.py assumes exactly 12/yr)
     #   remapcon,<target>      conservative remap to regular lat/lon
     # ap2pl runs before remap so pressure surfaces aren't smeared
     # horizontally; monmean before remap shrinks the data feeding remap.
@@ -100,6 +106,7 @@ for ((yyyy=starty; yyyy<=endy; yyyy++)); do
     if [[ ! -f $year_remapped ]]; then
         "$CDO" -O -f nc \
             -remapcon,"$target_grid" \
+            -seltimestep,1/12 \
             -monmean \
             -ap2pl,"$plevs_pa" \
             -selname,"$src_vars" \

@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
+from bg_routines.ipcc_cmaps import get_bias_cmap, IPCC_LINE
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -44,11 +45,9 @@ def load_yearly_data_simple(path, var):
             print(f"WARNING: Missing file {path}")
             return None
             
-        # Load single file with simple time decoding.
-        # AWI-ESM3 XIOS uses `time_counter`; the AWI-ESM2 echam preprocessor
-        # emits `time` instead, so chunk and groupby on whichever exists.
+        # Load single file with simple time decoding. AWI-CM3 XIOS uses
+        # `time_counter`; the AWI-ESM2 echam preprocessor uses `time`.
         ds = xr.open_dataset(path, decode_times=True, use_cftime=True)
-
         time_dim = 'time_counter' if 'time_counter' in ds.dims else 'time'
         ds = ds.chunk({time_dim: 12})
 
@@ -82,12 +81,12 @@ input_names = [historic_name]
 ctrl_input_paths = [pi_ctrl_path]
 ctrl_input_names = [pi_ctrl_name]
 
-# Use separate year ranges for historic and pi_ctrl. AWI-ESM3 configs
-# share start/end across both, so this resolves to the same list and
-# the behaviour is unchanged. AWI-ESM2 configs have distinct ranges
-# (e.g. historic 1850-2019, pi_ctrl 5831-6000).
-exps = list(range(historic_start, historic_end+1))
-ctrl_exps = list(range(pi_ctrl_start, pi_ctrl_end+1))
+# historic and pi_ctrl can have disjoint year ranges (e.g. hist 1850-2019
+# vs PI 5831-6000). Iterate each by its own period.
+hist_exps = list(range(historic_start, historic_end + 1))
+ctrl_exps = list(range(pi_ctrl_start, pi_ctrl_end + 1))
+# Kept as legacy alias for downstream code that references `exps`.
+exps = hist_exps
 
 climatology_path = [observation_path+'/HadCRUT5/']
 climatology_names = ['HadCRUT5']
@@ -126,16 +125,16 @@ data[v] = []
 
 for exp_path, exp_name in zip(input_paths, input_names):
     print(f"Processing {exp_name}...")
-    
+
     data_results = []
-    for exp in tqdm(exps):
+    for exp in tqdm(hist_exps):
         path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
         yearly_mean = load_yearly_data_simple(path, var)
         if yearly_mean is not None:
             data_results.append(yearly_mean)
         else:
             print(f"Failed to load {path}")
-    
+
     data[v] = np.array(data_results)
     print(f"Loaded {len(data_results)} files for historical data")
     
@@ -157,7 +156,7 @@ for exp_path, exp_name in zip(ctrl_input_paths, ctrl_input_names):
             ctrl_results.append(yearly_mean)
         else:
             print(f"Failed to load {path}")
-    
+
     ctrl_data[v] = np.array(ctrl_results)
     print(f"Loaded {len(ctrl_results)} files for control data")
 
@@ -209,19 +208,19 @@ data_ref = data_ref - obs_correction
 
 fig, ax = plt.subplots(figsize=figsize)
 # plot running mean
-plt.plot(years,smooth(hist,len(hist)),color='orange')
-plt.plot(years,smooth(pict,len(pict)),color='darkblue')
+plt.plot(years,smooth(hist,len(hist)),color=IPCC_LINE['warm'])
+plt.plot(years,smooth(pict,len(pict)),color=IPCC_LINE['cool'])
 
 # plot raw data
-plt.plot(years,hist,linewidth=0.5,color='orange')
-plt.plot(years,pict,linewidth=0.5,color='darkblue')
+plt.plot(years,hist,linewidth=0.5,color=IPCC_LINE['warm'])
+plt.plot(years,pict,linewidth=0.5,color=IPCC_LINE['cool'])
 
 
 
 # plot linear regression
 x_vals = np.array((years[0],years[len(years)-1]))
 y_vals = res.intercept + res.slope * x_vals
-plt.plot(x_vals, y_vals+np.mean(correction), '--',color='darkblue')
+plt.plot(x_vals, y_vals+np.mean(correction), '--',color=IPCC_LINE['cool'])
 
 
 ax.xaxis.set_minor_locator(AutoMinorLocator())
@@ -244,14 +243,14 @@ fig, ax = plt.subplots(figsize=figsize)
 
 # plot running mean
 plt.plot(years,smooth(data_ref,len(data_ref)),color='black')
-plt.plot(years,smooth(pict_c,len(pict_c)),color='darkblue')
-plt.plot(years,smooth(hist_c,len(hist_c)),color='orange')
+plt.plot(years,smooth(pict_c,len(pict_c)),color=IPCC_LINE['cool'])
+plt.plot(years,smooth(hist_c,len(hist_c)),color=IPCC_LINE['warm'])
 
 
 # plot raw data
 plt.plot(years,data_ref,linewidth=0.5,color='black')
-plt.plot(years,pict_c,linewidth=0.5,color='darkblue')
-plt.plot(years,hist_c,linewidth=0.5,color='orange')
+plt.plot(years,pict_c,linewidth=0.5,color=IPCC_LINE['cool'])
+plt.plot(years,hist_c,linewidth=0.5,color=IPCC_LINE['warm'])
 
 
 ax.xaxis.set_minor_locator(AutoMinorLocator())
@@ -275,15 +274,17 @@ input_names = [historic_name]
 ctrl_input_paths = [pi_ctrl_path]
 ctrl_input_names = [pi_ctrl_name]
 
-exps = list(range(historic_last25y_start, historic_last25y_end+1))
-# Last-25y window for pi_ctrl. For AWI-ESM3 configs where historic_last25y
-# and pi_ctrl share the same calendar this resolves to the same range
-# (unchanged behaviour). For AWI-ESM2 with disjoint historic and pi_ctrl
-# the ctrl loop now reads from the actual pi_ctrl end of run.
-ctrl_exps_25y = list(range(pi_ctrl_end - 24, pi_ctrl_end + 1))
+# Climatology windows for the precip/temp anomaly maps below: last 25y
+# of each period (historic and pi_ctrl have disjoint year ranges).
+# Window length is configurable so short smoke-test configs (e.g. the
+# ICON-FESOM 3-year run) don't try to read years before the start.
+# Default keeps the original 25-year window.
+_clim_window = globals().get('clim_window_years', 25)
+hist_exps_25y = list(range(historic_end - (_clim_window - 1), historic_end + 1))
+ctrl_exps_25y = list(range(pi_ctrl_end - (_clim_window - 1), pi_ctrl_end + 1))
+exps = hist_exps_25y  # legacy alias
 
-
-figsize=(6, 4.5)
+figsize=(9, 5)
 dpi = 300
 ofile = None
 res = [720, 360]
@@ -305,15 +306,15 @@ for var in ['precip','temp']:
 
         title = 'Precipitation anomaly'
         accumulation_factor=86400
-        colormap=plt.cm.PuOr
+        colormap=get_bias_cmap('pr')
         unit='%'
-        
+
     elif var == 'temp':
         variables = ['2t']
         levels = [-5.0,-3.0,-2.0,-1.0,-.6,-.2,.2,.6,1.0,2.0,3.0,5.0]
         title = 'Near surface (2m) air temperature anomaly'
         accumulation_factor=1
-        colormap=plt.cm.PuOr_r
+        colormap=get_bias_cmap('2t')
         unit='°C'
 
     '''
@@ -383,16 +384,16 @@ for var in ['precip','temp']:
             datat = []
             t = []
             temporary = []
-            for exp in tqdm(exps):
+            for exp in tqdm(hist_exps_25y):
 
                 path = exp_path+'/oifs/atm_remapped_1m_'+v+'_1m_'+f'{exp:04d}-{exp:04d}.nc'
                 temporary = dask.delayed(load_parallel)(v,path)
                 t.append(temporary)
 
+            # cdo's CdoTempfileStore is not thread-safe: a finalizer in one
+            # thread can delete a temp file before readArray reads it in
+            # another. Use synchronous scheduler for cdo-backed delayed tasks.
             with ProgressBar():
-                # Default dask scheduler is threads; cdo's CdoTempfileStore finalizer
-                # races with readArray under threads and randomly deletes temp files
-                # mid-read. Force synchronous for cdo-backed delayed tasks.
                 datat = dask.compute(*t, scheduler='synchronous')
             data[exp_name][v] = np.array([np.squeeze(d) for d in datat])
 
@@ -410,9 +411,6 @@ for var in ['precip','temp']:
                 t.append(temporary)
 
             with ProgressBar():
-                # Default dask scheduler is threads; cdo's CdoTempfileStore finalizer
-                # races with readArray under threads and randomly deletes temp files
-                # mid-read. Force synchronous for cdo-backed delayed tasks.
                 datat = dask.compute(*t, scheduler='synchronous')
             data_ctrl[exp_name][v] = np.array([np.squeeze(d) for d in datat])
             
@@ -464,7 +462,7 @@ for var in ['precip','temp']:
 
         title = 'Precipitation anomaly'
         accumulation_factor=86400
-        colormap=plt.cm.PuOr
+        colormap=get_bias_cmap('pr')
         unit='mm/day'
         data_plot = (data[historic_name]['lsp']+data[historic_name]['cp'])*accumulation_factor
         data_ctrl_plot = (data_ctrl[pi_ctrl_name]['lsp']+data_ctrl[pi_ctrl_name]['cp'])*accumulation_factor
@@ -474,7 +472,7 @@ for var in ['precip','temp']:
         levels = [-5.0,-3.0,-2.0,-1.0,-.6,-.2,.2,.6,1.0,2.0,3.0,5.0]
         title = 'Near surface (2m) air temperature anomaly'
         accumulation_factor=1
-        colormap=plt.cm.PuOr_r
+        colormap=get_bias_cmap('2t')
         unit='°C'
         data_plot = data[historic_name]['2t']
         data_ctrl_plot = data_ctrl[pi_ctrl_name]['2t']
@@ -528,13 +526,15 @@ for var in ['precip','temp']:
 
 
     nrows, ncol = 1, 1
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize, subplot_kw={'projection': ccrs.PlateCarree()})
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize, subplot_kw={'projection': ccrs.EqualEarth()})
+    fig.subplots_adjust(bottom=0.18, top=0.95, left=0.05, right=0.95)
     if isinstance(axes, np.ndarray):
         axes = axes.flatten()
     else:
         axes = [axes]
     i = 0
 
+    axes[i].set_global()
     axes[i].add_feature(cfeature.COASTLINE, zorder=3)
 
     if var == 'precip':
@@ -559,7 +559,7 @@ for var in ['precip','temp']:
 
     gl = axes[i].gridlines(draw_labels=True,
                            linewidth=1, color='gray', alpha=0.2, linestyle='-')
-    gl.xlabels_bottom = False
+    gl.bottom_labels = False
     gl.bottom_labels = False
 
     if var == 'temp':
@@ -577,7 +577,9 @@ for var in ['precip','temp']:
         axes[i].text(0.86, 0.98, textstr, transform=axes[i].transAxes, fontsize=10,
                      verticalalignment='top', bbox=props, zorder=4)
 
-    cbar_ax_abs = fig.add_axes([0.15, 0.15, 0.7, 0.05])
+    # Match part18 (precip_vs_GPCP) layout: slimmer colorbar dropped to
+    # y=0.06 so the EqualEarth oval has full room above.
+    cbar_ax_abs = fig.add_axes([0.15, 0.06, 0.7, 0.04])
     cbar_ax_abs.tick_params(labelsize=12)
     if var == 'precip':
         cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal', ticks=levels2)

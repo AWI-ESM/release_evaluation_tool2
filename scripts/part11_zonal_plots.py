@@ -4,6 +4,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
 from bg_routines.metrics import md, rmsd
+from bg_routines.ipcc_cmaps import get_bias_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -134,7 +135,7 @@ for variable in variables:
             t.append(temporary)
 
         with ProgressBar():
-            datat = dask.compute(*t, scheduler='threads')
+            datat = dask.compute(*t, scheduler='synchronous')
         data[exp_name][variable] = np.array([np.squeeze(d) for d in datat])
         
     data_model = OrderedDict()
@@ -168,7 +169,7 @@ for variable in variables:
 
         axes[i]=plt.subplot(nrows,ncol,i+1)
         imf=plt.contourf(lat, x, data_model_mean[exp_name]-
-                        data_reanalysis_mean, cmap=plt.cm.PuOr_r, 
+                        data_reanalysis_mean, cmap=get_bias_cmap(variable),
                          levels=levels, extend='both',
                          zorder=1)
         line_colors = ['black' for l in imf.levels]
