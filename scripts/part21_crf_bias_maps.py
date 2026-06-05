@@ -92,16 +92,18 @@ def load_model_crf_data(exp_path, exp_name, years):
             print(f"ERROR: No files found for {var}")
             return None
             
-        # Load and process files
+        # Load and process files. AWI-ESM3 XIOS uses time_counter; the
+        # AWI-ESM2 echam preprocessor uses time. Detect at chunk time.
         ds = xr.open_mfdataset(files, combine="by_coords", parallel=False,
-                             chunks={'time_counter': 12}, 
                              decode_times=True, use_cftime=True,
                              combine_attrs='drop_conflicts')
-        
+        time_dim = 'time_counter' if 'time_counter' in ds.dims else 'time'
+        ds = ds.chunk({time_dim: 12})
+
         var_data = ds[var] / accumulation_period  # Normalize flux
-        
+
         # Take time mean to get climatology
-        var_clim = var_data.mean(dim='time_counter')
+        var_clim = var_data.mean(dim=time_dim)
         data[var] = var_clim.compute()
     
     # Calculate cloud radiative forcing

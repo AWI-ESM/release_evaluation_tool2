@@ -114,6 +114,13 @@ def interpolate_for_plot(
         path where to store additional interpolation files. If None (default),
         the path of the mesh will be used.
     """
+    # Accept a single 1-D ndarray (no time axis) as well as a list of
+    # ndarrays; the docstring already promises both but the loop below
+    # iterates element-wise over a bare ndarray and ends up handing
+    # scalars to fesom2regular.
+    if isinstance(data, np.ndarray) and data.ndim == 1:
+        data = [data]
+
     interpolated = []
     for datainstance in data:
 

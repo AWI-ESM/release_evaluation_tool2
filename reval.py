@@ -145,6 +145,40 @@ SCRIPTS.update({
     "part26_lpjg_pft.py":           True,
 })
 
+# Read `scripts_overrides` from the config without executing it (heavy
+# imports like pyfesom2 mean we don't want to import the config here).
+# This is a literal-only ast walk; only bool values are accepted.
+def _read_scripts_overrides(path):
+    import ast
+    try:
+        with open(path) as f:
+            tree = ast.parse(f.read())
+    except (OSError, SyntaxError):
+        return {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == 'scripts_overrides':
+                    try:
+                        val = ast.literal_eval(node.value)
+                    except (ValueError, SyntaxError):
+                        return {}
+                    return val if isinstance(val, dict) else {}
+    return {}
+
+_overrides = _read_scripts_overrides(config_path)
+if _overrides:
+    print(f"Applying {len(_overrides)} scripts_overrides from config")
+    for name, enabled in _overrides.items():
+        if name not in SCRIPTS and enabled:
+            # Allow enabling a script not in the default set (e.g. jsbach
+            # replacements). It must still exist on disk.
+            if not os.path.exists(os.path.join('scripts', name)):
+                print(f"  WARN override '{name}' enabled but scripts/{name} missing - ignoring")
+                continue
+        SCRIPTS[name] = bool(enabled)
+        print(f"  {name}: {'enabled' if enabled else 'disabled'}")
+
 # Submit jobs and collect job IDs for the report dependency
 submitted_job_ids = []
 

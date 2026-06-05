@@ -58,11 +58,19 @@ def plot_data(variable, hemisphere, projection, extent, filename, levels, factor
     
     depth_index = 3  # Choosing a consistent depth level
     data_2d = factor * data_model_mean[exp_name][depth_index, :, :]
-    
-    imf = ax.contourf(lon, lat, data_2d, cmap=new_cmap, levels=levels, extend=extend,
-                      transform=ccrs.PlateCarree(), zorder=1)
-    ax.contour(lon, lat, data_2d, levels=levels, colors='black', linewidths=0.2,
-               transform=ccrs.PlateCarree(), zorder=1)
+
+    # Two coordinated fixes needed for polar contourf:
+    #  - add_cyclic_point closes the seam at lon=0/360 (otherwise a
+    #    vertical stripe streaks across the polar plot)
+    #  - transform_first=True (with 2-D meshgridded X/Y) avoids the
+    #    "Sequences of multi-polygons are not valid arguments" shapely
+    #    error cartopy raises when polygons wrap the pole.
+    data_cyc, lon_cyc = add_cyclic_point(data_2d, coord=lon)
+    lon2d, lat2d = np.meshgrid(lon_cyc, lat)
+    imf = ax.contourf(lon2d, lat2d, data_cyc, cmap=new_cmap, levels=levels, extend=extend,
+                      transform=ccrs.PlateCarree(), transform_first=True, zorder=1)
+    ax.contour(lon2d, lat2d, data_cyc, levels=levels, colors='black', linewidths=0.2,
+               transform=ccrs.PlateCarree(), transform_first=True, zorder=1)
     
     ax.set_title(f"{variable} - {hemisphere}", fontweight="bold")
     cb = plt.colorbar(imf, orientation='horizontal', fraction=0.046, pad=0.04)
@@ -121,7 +129,9 @@ for variable in variables:
     lat_size = data_model_mean[exp_name].shape[-2]
     lon = np.linspace(0, 360, lon_size, endpoint=False)
     lat = np.linspace(-90, 90, lat_size)
-    data_model_mean[historic_name], lon = add_cyclic_point(data_model_mean[historic_name], coord=lon)
+    # Seam closure is now applied per-plot inside plot_data() (one
+    # add_cyclic_point per call). Doing it once here at module scope
+    # would shape-mismatch for any exp_name != historic_name.
 
     # -------------------------------
     # Plotting Configuration

@@ -44,21 +44,26 @@ def load_yearly_data_simple(path, var):
             print(f"WARNING: Missing file {path}")
             return None
             
-        # Load single file with simple time decoding
-        ds = xr.open_dataset(path, decode_times=True, use_cftime=True, chunks={'time_counter': 12})
-        
+        # Load single file with simple time decoding.
+        # AWI-ESM3 XIOS uses `time_counter`; the AWI-ESM2 echam preprocessor
+        # emits `time` instead, so chunk and groupby on whichever exists.
+        ds = xr.open_dataset(path, decode_times=True, use_cftime=True)
+
+        time_dim = 'time_counter' if 'time_counter' in ds.dims else 'time'
+        ds = ds.chunk({time_dim: 12})
+
         # Get the variable data
         var_data = ds[var]
-        
+
         # Normalize by accumulation period ONLY for flux variables (not temperature)
         if var != '2t':  # Don't normalize temperature
             var_data = var_data / accumulation_period
-        
+
         # Calculate global area mean
         global_mean = global_area_mean(var_data)
-        
+
         # Convert to yearly mean using groupby
-        yearly_data = global_mean.groupby('time_counter.year').mean()
+        yearly_data = global_mean.groupby(f'{time_dim}.year').mean()
         
         # Force computation to avoid lazy evaluation
         yearly_data = yearly_data.compute()
@@ -77,7 +82,12 @@ input_names = [historic_name]
 ctrl_input_paths = [pi_ctrl_path]
 ctrl_input_names = [pi_ctrl_name]
 
+# Use separate year ranges for historic and pi_ctrl. AWI-ESM3 configs
+# share start/end across both, so this resolves to the same list and
+# the behaviour is unchanged. AWI-ESM2 configs have distinct ranges
+# (e.g. historic 1850-2019, pi_ctrl 5831-6000).
 exps = list(range(historic_start, historic_end+1))
+ctrl_exps = list(range(pi_ctrl_start, pi_ctrl_end+1))
 
 climatology_path = [observation_path+'/HadCRUT5/']
 climatology_names = ['HadCRUT5']
@@ -138,9 +148,9 @@ ctrl_data[v] = []
 
 for exp_path, exp_name in zip(ctrl_input_paths, ctrl_input_names):
     print(f"Processing {exp_name}...")
-    
+
     ctrl_results = []
-    for exp in tqdm(exps):
+    for exp in tqdm(ctrl_exps):
         path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
         yearly_mean = load_yearly_data_simple(path, var)
         if yearly_mean is not None:
@@ -266,6 +276,11 @@ ctrl_input_paths = [pi_ctrl_path]
 ctrl_input_names = [pi_ctrl_name]
 
 exps = list(range(historic_last25y_start, historic_last25y_end+1))
+# Last-25y window for pi_ctrl. For AWI-ESM3 configs where historic_last25y
+# and pi_ctrl share the same calendar this resolves to the same range
+# (unchanged behaviour). For AWI-ESM2 with disjoint historic and pi_ctrl
+# the ctrl loop now reads from the actual pi_ctrl end of run.
+ctrl_exps_25y = list(range(pi_ctrl_end - 24, pi_ctrl_end + 1))
 
 
 figsize=(6, 4.5)
@@ -375,7 +390,10 @@ for var in ['precip','temp']:
                 t.append(temporary)
 
             with ProgressBar():
-                datat = dask.compute(*t, scheduler='threads')
+                # Default dask scheduler is threads; cdo's CdoTempfileStore finalizer
+                # races with readArray under threads and randomly deletes temp files
+                # mid-read. Force synchronous for cdo-backed delayed tasks.
+                datat = dask.compute(*t, scheduler='synchronous')
             data[exp_name][v] = np.array([np.squeeze(d) for d in datat])
 
     paths = []
@@ -385,14 +403,17 @@ for var in ['precip','temp']:
             datat = []
             t = []
             temporary = []
-            for exp in tqdm(exps):
+            for exp in tqdm(ctrl_exps_25y):
 
                 path = exp_path+'/oifs/atm_remapped_1m_'+v+'_1m_'+f'{exp:04d}-{exp:04d}.nc'
                 temporary = dask.delayed(load_parallel)(v,path)
                 t.append(temporary)
 
             with ProgressBar():
-                datat = dask.compute(*t, scheduler='threads')
+                # Default dask scheduler is threads; cdo's CdoTempfileStore finalizer
+                # races with readArray under threads and randomly deletes temp files
+                # mid-read. Force synchronous for cdo-backed delayed tasks.
+                datat = dask.compute(*t, scheduler='synchronous')
             data_ctrl[exp_name][v] = np.array([np.squeeze(d) for d in datat])
             
 def resample(xyobs,n,m):

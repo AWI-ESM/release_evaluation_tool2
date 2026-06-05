@@ -10,8 +10,16 @@ print(SCRIPT_NAME)
 # Mark as started
 update_status(SCRIPT_NAME, " Started")
 
-# Plot all masks from masks.nc file
-masks_file = '/work/bb1469/a270092/runtime/awicm3-develop/CORE3_SPIN_900s/run_20400101-20491231/work/masks.nc'
+# Plot all masks from masks.nc. OASIS writes one per run leg; any leg's copy
+# is usable, so derive from spinup_path: <run_root>/run_*/work/masks.nc.
+import glob
+spinup_root = os.path.dirname(spinup_path.rstrip('/'))
+candidates = sorted(glob.glob(os.path.join(spinup_root, 'run_*', 'work', 'masks.nc')))
+if not candidates:
+    print(f"No masks.nc found under {spinup_root}/run_*/work/ — skipping")
+    update_status(SCRIPT_NAME, " Skipped (no masks.nc)")
+    sys.exit(0)
+masks_file = candidates[0]
 
 print(f"Loading masks from: {masks_file}")
 ds = xr.open_dataset(masks_file)
@@ -42,16 +50,16 @@ for idx, mask_var in enumerate(mask_vars, 1):
     # Extract grid prefix from mask variable name
     prefix = mask_var.replace('.msk', '')
     config = grid_configs.get(prefix, None)
-    
+
     ax = fig.add_subplot(n_rows, n_cols, idx)
-    
+
     mask_data = ds[mask_var].values.squeeze()
-    
+
     if config and config['lon'] is not None:
         # Plot with geographic coordinates
         lon = ds[config['lon']].values.squeeze()
         lat = ds[config['lat']].values.squeeze()
-        
+
         scatter = ax.scatter(lon, lat, c=mask_data, cmap='RdYlBu', s=0.5, alpha=0.7)
         ax.set_xlabel('Longitude')
         ax.set_ylabel('Latitude')
@@ -60,7 +68,7 @@ for idx, mask_var in enumerate(mask_vars, 1):
     else:
         # Plot as 1D or 2D array
         if mask_data.ndim == 1:
-            im = ax.scatter(np.arange(len(mask_data)), np.zeros_like(mask_data), 
+            im = ax.scatter(np.arange(len(mask_data)), np.zeros_like(mask_data),
                            c=mask_data, cmap='RdYlBu', s=0.1)
             ax.set_xlabel('Index')
             ax.set_ylabel('')
@@ -69,10 +77,10 @@ for idx, mask_var in enumerate(mask_vars, 1):
             im = ax.imshow(mask_data, cmap='RdYlBu', aspect='auto', origin='lower')
             ax.set_xlabel('X')
             ax.set_ylabel('Y')
-    
+
     title = config['title'] if config else mask_var
     ax.set_title(f'{title}\n({mask_var})', fontsize=10, fontweight='bold')
-    
+
     # Add colorbar
     if config and config['lon'] is not None:
         plt.colorbar(scatter, ax=ax, label='Mask Value', shrink=0.8)
@@ -91,34 +99,34 @@ print(f"Overview plot saved: {ofile}")
 for mask_var in mask_vars:
     prefix = mask_var.replace('.msk', '')
     config = grid_configs.get(prefix, None)
-    
+
     if config and config['lon'] is not None:
-        fig, ax = plt.subplots(figsize=(12, 6), subplot_kw={'projection': ccrs.Robinson()})
-        
+        fig, ax = plt.subplots(figsize=(12, 6), subplot_kw={'projection': ccrs.EqualEarth()})
+
         lon = ds[config['lon']].values.squeeze()
         lat = ds[config['lat']].values.squeeze()
         mask_data = ds[mask_var].values.squeeze()
-        
+
         # Use different colors for mask values
         colors = ['navy', 'crimson']
         cmap = mpl.colors.ListedColormap(colors)
         bounds = [-0.5, 0.5, 1.5]
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
-        
-        scatter = ax.scatter(lon, lat, c=mask_data, cmap=cmap, norm=norm, 
+
+        scatter = ax.scatter(lon, lat, c=mask_data, cmap=cmap, norm=norm,
                             s=0.3, alpha=0.8, transform=ccrs.PlateCarree())
-        
+
         ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
         ax.add_feature(cfeature.BORDERS, linewidth=0.3, alpha=0.5)
         ax.gridlines(draw_labels=True, linewidth=0.3, alpha=0.5)
-        
+
         ax.set_title(f'{config["title"]}\n{mask_var}', fontsize=12, fontweight='bold')
-        
+
         # Custom legend
         legend_elements = [mpatches.Patch(facecolor='navy', label='0 (Inactive)'),
                          mpatches.Patch(facecolor='crimson', label='1 (Active)')]
         ax.legend(handles=legend_elements, loc='lower left')
-        
+
         ofile = out_path + f'mask_{prefix}.png'
         plt.savefig(ofile, dpi=dpi, bbox_inches='tight')
         plt.close()
@@ -127,34 +135,34 @@ for mask_var in mask_vars:
 # Also create RnfA and RnfO plots as 2D regular grids
 for mask_var in ['RnfA.msk', 'RnfO.msk']:
     if mask_var in ds.data_vars:
-        fig, ax = plt.subplots(figsize=(12, 6), subplot_kw={'projection': ccrs.Robinson()})
-        
+        fig, ax = plt.subplots(figsize=(12, 6), subplot_kw={'projection': ccrs.EqualEarth()})
+
         mask_data = ds[mask_var].values
-        
+
         # These are on a regular 512x256 grid
         # Data seems to be 0..360, so use that range to match land contours
         lon = np.linspace(0, 360, 512)
         lat = np.linspace(-90, 90, 256)
         lon2d, lat2d = np.meshgrid(lon, lat)
-        
+
         colors = ['navy', 'crimson']
         cmap = mpl.colors.ListedColormap(colors)
-        
-        im = ax.pcolormesh(lon2d, lat2d, mask_data, cmap=cmap, 
+
+        im = ax.pcolormesh(lon2d, lat2d, mask_data, cmap=cmap,
                           transform=ccrs.PlateCarree(), shading='auto')
-        
+
         ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
         ax.gridlines(draw_labels=True, linewidth=0.3, alpha=0.5)
-        
+
         prefix = mask_var.replace('.msk', '')
         config = grid_configs.get(prefix, {})
         title = config.get('title', mask_var)
         ax.set_title(f'{title}\n{mask_var}', fontsize=12, fontweight='bold')
-        
+
         legend_elements = [mpatches.Patch(facecolor='navy', label='0 (Inactive)'),
                          mpatches.Patch(facecolor='crimson', label='1 (Active)')]
         ax.legend(handles=legend_elements, loc='lower left')
-        
+
         ofile = out_path + f'mask_{prefix}.png'
         plt.savefig(ofile, dpi=dpi, bbox_inches='tight')
         plt.close()

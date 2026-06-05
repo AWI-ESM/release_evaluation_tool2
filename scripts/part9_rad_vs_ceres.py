@@ -72,7 +72,10 @@ for variable in ['str', 'ssr', 'ssrd']:
             t.append(temporary)
 
         with ProgressBar():
-            datat = dask.compute(*t, scheduler='threads')
+            # Default dask scheduler is threads; cdo's CdoTempfileStore finalizer
+            # races with readArray under threads and randomly deletes temp files
+            # mid-read. Force synchronous for cdo-backed delayed tasks.
+            datat = dask.compute(*t, scheduler='synchronous')
         data[exp_name][variable] = np.array([np.squeeze(d) for d in datat])
 
     crf_sw_model = OrderedDict()

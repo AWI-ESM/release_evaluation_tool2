@@ -91,11 +91,12 @@ def load_yearly_data_simple(path, var, years, pattern, freq):
         print(f"Loading {len(files)} files for {var}...")
         
         # Load files with explicit time decoding to handle mixed calendar types
-        ds = xr.open_mfdataset(files, combine="by_coords", parallel=False, 
-                             chunks={'time_counter': 12}, 
+        ds = xr.open_mfdataset(files, combine="by_coords", parallel=False,
                              decode_times=True, use_cftime=True,
                              combine_attrs='drop_conflicts')
-        
+        time_dim = 'time_counter' if 'time_counter' in ds.dims else 'time'
+        ds = ds.chunk({time_dim: 12})
+
         # Get the variable data
         var_data = ds[var]
         
@@ -107,7 +108,7 @@ def load_yearly_data_simple(path, var, years, pattern, freq):
         global_mean = global_area_mean(var_data)
         
         # Convert to yearly means using groupby
-        yearly_data = global_mean.groupby('time_counter.year').mean()
+        yearly_data = global_mean.groupby(f'{time_dim}.year').mean()
         
         # Force computation to avoid lazy evaluation
         yearly_data = yearly_data.compute()
