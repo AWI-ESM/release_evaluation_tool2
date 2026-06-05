@@ -276,6 +276,11 @@ ctrl_input_paths = [pi_ctrl_path]
 ctrl_input_names = [pi_ctrl_name]
 
 exps = list(range(historic_last25y_start, historic_last25y_end+1))
+# Last-25y window for pi_ctrl. For AWI-ESM3 configs where historic_last25y
+# and pi_ctrl share the same calendar this resolves to the same range
+# (unchanged behaviour). For AWI-ESM2 with disjoint historic and pi_ctrl
+# the ctrl loop now reads from the actual pi_ctrl end of run.
+ctrl_exps_25y = list(range(pi_ctrl_end - 24, pi_ctrl_end + 1))
 
 
 figsize=(6, 4.5)
@@ -398,7 +403,7 @@ for var in ['precip','temp']:
             datat = []
             t = []
             temporary = []
-            for exp in tqdm(exps):
+            for exp in tqdm(ctrl_exps_25y):
 
                 path = exp_path+'/oifs/atm_remapped_1m_'+v+'_1m_'+f'{exp:04d}-{exp:04d}.nc'
                 temporary = dask.delayed(load_parallel)(v,path)
