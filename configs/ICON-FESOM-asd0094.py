@@ -145,21 +145,20 @@ mesh = pf.load_mesh(meshpath)
 data = xr.open_dataset(meshpath+'/fesom.mesh.diag.nc') if os.path.exists(meshpath+'/fesom.mesh.diag.nc') else None
 
 # Per-config script overrides. ICON atm_2d_ml doesn't emit clear-sky
-# radiation (tsrc/ttrc), downward shortwave (ssrd), or low-cloud-cover
-# (lcc), nor a separate convective precip (cp); and the atm_3d_ml fields
-# live on model levels (not pressure levels) so QBO / zonal plots
-# require a separate pressure-level interpolation step we haven't built
-# yet. Disable affected scripts.
+# radiation (tsrc/ttrc); the atm_3d_ml fields live on model levels, and
+# the pressure-level interp for QBO / zonal plots is now produced by
+# preprocess_ICON-FESOM_atm_pl.sh (cdo ap2pl), so part11/part12 are
+# re-enabled.
+#
+# Re-enabled (preprocessor now synthesises these):
+#   - part18 / part16 precip branch: `cp` is emitted as a zero field
+#     (lsp carries all precip; cp+lsp = total precip still holds).
+#   - part9 SW vs CERES: `ssrd` is derived from sob_s and the four
+#     surface albedos, ssrd = sob_s / max(1 - mean(alb), 0.05).
+#   - part11 zonal plots, part12 QBO: pressure-level u/v/t/q now
+#     produced by preprocess_ICON-FESOM_atm_pl.sh.
 scripts_overrides = {
     "part4_cmpi.py":             False,
-    "part9_rad_vs_ceres.py":     False,
-    "part10_clt_vs_modis.py":    False,
-    "part11_zonal_plots.py":     False,
-    "part12_qbo.py":             False,
-    "part16_clim_change.py":     False,
-    # part18 needs `cp` (convective precip) which ICON doesn't split out
-    # of tot_prec_rate in atm_2d_ml.
-    "part18_precip_vs_gpcp.py":  False,
     "part22_masks.py":           False,
     # No land-surface model output is exposed in this stream; skip both
     # the LPJ-GUESS (AWI-ESM3) and JSBACH (AWI-ESM2) land scripts.

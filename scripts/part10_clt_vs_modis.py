@@ -27,6 +27,23 @@ dpi = 300
 ofile = None
 res = [180, 91]
 variable = ['tcc', 'lcc', 'hcc']
+# Drop cloud-cover variables whose preprocessed files don't exist for the
+# historic year window (e.g. ICON atm_2d_ml only emits total cloud cover
+# as 'tcc'). This keeps the script a no-op filter for AWI-ESM2/3 / AWI-CM3
+# (which preprocess all three) while letting tcc-only runs degrade
+# gracefully.
+import glob
+_oifs_dir = historic_path + '/oifs/'
+variable = [
+    v for v in variable
+    if any(
+        os.path.exists(f"{_oifs_dir}atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc")
+        for exp in exps
+    )
+]
+if not variable:
+    update_status(SCRIPT_NAME, ' Skipped (no cloud vars in this preproc)')
+    sys.exit(0)
 variable_clim = 'clt'
 title='Cloud area fraction vs. MODIS'
 mapticks = [-50,-30,-20,-10,-6,-2,2,6,10,20,30,50]

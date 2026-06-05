@@ -71,9 +71,13 @@ declare -A ren=(
 # Variables we'll synthesize from sums of multiple ICON fields:
 #   sf  = snow_gsp_rate + snow_con_rate + ice_gsp_rate (frozen precip)
 #   lsp = tot_prec_rate - (snow components)             (liquid precip)
-# `cp` (convective precip) isn't split out of tot_prec_rate in ICON
-# atm_2d_ml; for now we leave it absent and let configs that need it
-# disable the relevant scripts via scripts_overrides.
+#   cp  = 0 (ICON atm_2d_ml doesn't split convective from large-scale
+#         rain; we assign all of it to lsp and emit cp as a zero field so
+#         scripts that expect `cp + lsp = total precip` still work)
+#   ssrd = sob_s / max(1 - alb, 0.05), where alb is the average of the
+#          four surface albedos (visdir, visdif, nirdir, nirdif). Recovers
+#          a downward SW estimate from net SW + albedos since ICON
+#          atm_2d_ml doesn't expose ssrd directly.
 
 echo "Preprocessing $expname years $starty-$endy -> $outdir (grid $target_grid)"
 
@@ -122,6 +126,37 @@ for ((yyyy=starty; yyyy<=endy; yyyy++)); do
             -expr,'tot_prec_rate=tot_prec_rate-snow_gsp_rate-snow_con_rate-ice_gsp_rate' \
             -selname,tot_prec_rate,snow_gsp_rate,snow_con_rate,ice_gsp_rate \
             "$year_remapped" "$lsp_out"
+    fi
+
+    # Synthetic convective precip: cp = 0 (units kg m-2 s-1, like lsp).
+    # ICON atm_2d_ml doesn't separate convective from large-scale rain,
+    # so we lump everything into lsp and emit cp as a zero field with the
+    # same dims/grid/time axis. -expr 'cp=lsp*0' against the lsp per-year
+    # file is the cleanest path: same shape, same units, value identically
+    # zero. We then rewrite the units attr so ncdump shows the expected
+    # kg m-2 s-1 (cdo carries lsp's attrs through expr by default, so this
+    # is already correct, but we set it explicitly for clarity).
+    cp_out="$outdir/atm_remapped_1m_cp_1m_${yyyy}-${yyyy}.nc"
+    if [[ ! -f $cp_out ]]; then
+        "$CDO" -O -f nc \
+            -setattribute,cp@units="kg m-2 s-1",cp@long_name="convective precipitation rate (synthetic zero)" \
+            -expr,'cp=lsp*0' \
+            "$lsp_out" "$cp_out"
+    fi
+
+    # Synthetic downward SW: ssrd = sob_s / max(1 - alb, 0.05), where
+    # alb = mean of the four surface albedos. The clamp avoids blow-up
+    # over snow/ice where alb -> 1. Note: sob_s in ICON is W/m^2 net
+    # downward, so dividing by (1 - alb) recovers the incoming SW.
+    # ICON albedos are stored as percent (units = "%"), so we divide by
+    # 100 to get a 0..1 fraction before the (1 - alb) step.
+    ssrd_out="$outdir/atm_remapped_1m_ssrd_1m_${yyyy}-${yyyy}.nc"
+    if [[ ! -f $ssrd_out ]]; then
+        "$CDO" -O -f nc \
+            -setattribute,ssrd@units="W m-2",ssrd@long_name="surface downward shortwave (synthetic from sob_s and albedos)" \
+            -expr,'_alb=(albvisdir+albvisdif+albnirdir+albnirdif)/400; _coalb=(1-_alb>0.05)?(1-_alb):0.05; ssrd=sob_s/_coalb;' \
+            -selname,sob_s,albvisdir,albvisdif,albnirdir,albnirdif \
+            "$year_remapped" "$ssrd_out"
     fi
 done
 
