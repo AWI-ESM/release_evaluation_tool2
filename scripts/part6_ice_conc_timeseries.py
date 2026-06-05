@@ -153,17 +153,29 @@ ax1.yaxis.grid(color='gray', linestyle='dashed')
 
 _split = spinup_end
 plt.axvline(x=_split,color='black',alpha=0.7,linewidth=3)
-plt.text(_split+10,ax1.get_ylim()[1]-2,'HIST & PICT',fontsize=15)
-plt.text(_split-40,ax1.get_ylim()[1]-2,'SPIN',fontsize=15)
+# Position the SPIN / HIST&PICT labels relative to the actual axis
+# span so they don't sit far outside the data range when the run is
+# only a few years long (bbox_inches='tight' otherwise inflates the
+# figure to encompass the text, blowing past matplotlib's 2**16-pixel
+# Agg limit).
+_xspan = abs(ax1.get_xlim()[1] - ax1.get_xlim()[0])
+_label_offset = max(10.0, 0.04 * _xspan)
+plt.text(_split + _label_offset, ax1.get_ylim()[1]-2,'HIST & PICT',fontsize=15)
+plt.text(_split - _label_offset*4, ax1.get_ylim()[1]-2,'SPIN',fontsize=15)
+ax1.set_xlim(ax1.get_xlim())  # freeze so subsequent text doesn't auto-expand
 
-ax1.xaxis.set_major_locator(MultipleLocator(50))
+# Scale x-tick density to the timeline length: 50 yr majors / 10 yr minors
+# work for the multi-millennium spinup but produce no ticks on a 3-yr run.
+_majstep = max(1, int(_xspan / 10))
+_minstep = max(1, int(_majstep / 5))
+ax1.xaxis.set_major_locator(MultipleLocator(_majstep))
 ax1.xaxis.set_major_formatter(FormatStrFormatter('%d'))
 
 ax1.tick_params(axis='both', which='major', labelsize=15)
 ax1.tick_params(axis='both', which='minor', labelsize=12)
 
 # For the minor ticks, use no labels; default NullFormatter.
-ax1.xaxis.set_minor_locator(MultipleLocator(10))
+ax1.xaxis.set_minor_locator(MultipleLocator(_minstep))
 
 legend=['Arctic March','Arctic September','Antarctic March','Antarctic September']
 plt.legend(legend,loc='upper left',fontsize=15)
@@ -288,17 +300,29 @@ ax1.yaxis.grid(color='gray', linestyle='dashed')
 
 _split = spinup_end
 plt.axvline(x=_split,color='black',alpha=0.7,linewidth=3)
-plt.text(_split+10,ax1.get_ylim()[1]-2,'HIST & PICT',fontsize=15)
-plt.text(_split-40,ax1.get_ylim()[1]-2,'SPIN',fontsize=15)
+# Position the SPIN / HIST&PICT labels relative to the actual axis
+# span so they don't sit far outside the data range when the run is
+# only a few years long (bbox_inches='tight' otherwise inflates the
+# figure to encompass the text, blowing past matplotlib's 2**16-pixel
+# Agg limit).
+_xspan = abs(ax1.get_xlim()[1] - ax1.get_xlim()[0])
+_label_offset = max(10.0, 0.04 * _xspan)
+plt.text(_split + _label_offset, ax1.get_ylim()[1]-2,'HIST & PICT',fontsize=15)
+plt.text(_split - _label_offset*4, ax1.get_ylim()[1]-2,'SPIN',fontsize=15)
+ax1.set_xlim(ax1.get_xlim())  # freeze so subsequent text doesn't auto-expand
 
-ax1.xaxis.set_major_locator(MultipleLocator(50))
+# Scale x-tick density to the timeline length: 50 yr majors / 10 yr minors
+# work for the multi-millennium spinup but produce no ticks on a 3-yr run.
+_majstep = max(1, int(_xspan / 10))
+_minstep = max(1, int(_majstep / 5))
+ax1.xaxis.set_major_locator(MultipleLocator(_majstep))
 ax1.xaxis.set_major_formatter(FormatStrFormatter('%d'))
 
 ax1.tick_params(axis='both', which='major', labelsize=15)
 ax1.tick_params(axis='both', which='minor', labelsize=12)
 
 # For the minor ticks, use no labels; default NullFormatter.
-ax1.xaxis.set_minor_locator(MultipleLocator(10))
+ax1.xaxis.set_minor_locator(MultipleLocator(_minstep))
 
 legend=['Arctic March','Arctic September','Antarctic March','Antarctic September']
 plt.legend(legend,loc='upper left',fontsize=15)
