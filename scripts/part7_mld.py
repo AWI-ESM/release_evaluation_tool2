@@ -60,18 +60,18 @@ def plot_data(variable, hemisphere, projection, extent, filename, levels, factor
     depth_index = 3  # Choosing a consistent depth level
     data_2d = factor * data_model_mean[exp_name][depth_index, :, :]
 
-    # Two coordinated fixes needed for polar contourf:
-    #  - add_cyclic_point closes the seam at lon=0/360 (otherwise a
-    #    vertical stripe streaks across the polar plot)
-    #  - transform_first=True (with 2-D meshgridded X/Y) avoids the
-    #    "Sequences of multi-polygons are not valid arguments" shapely
-    #    error cartopy raises when polygons wrap the pole.
+    # Close the seam at lon=0/360 with add_cyclic_point so the contour
+    # algorithm sees a continuous strip across the dateline. Use the 1-D
+    # coords directly with the default transform_first=False — the
+    # combination of transform_first=True + 2-D meshgridded X/Y produced
+    # a polar-stereo rendering full of vertical-stripe artifacts (the
+    # contour algorithm got fed projection-distorted, pole-collapsed
+    # points and tried to draw boundaries between every adjacent column).
     data_cyc, lon_cyc = add_cyclic_point(data_2d, coord=lon)
-    lon2d, lat2d = np.meshgrid(lon_cyc, lat)
-    imf = ax.contourf(lon2d, lat2d, data_cyc, cmap=new_cmap, levels=levels, extend=extend,
-                      transform=ccrs.PlateCarree(), transform_first=True, zorder=1)
-    ax.contour(lon2d, lat2d, data_cyc, levels=levels, colors='black', linewidths=0.2,
-               transform=ccrs.PlateCarree(), transform_first=True, zorder=1)
+    imf = ax.contourf(lon_cyc, lat, data_cyc, cmap=new_cmap, levels=levels, extend=extend,
+                      transform=ccrs.PlateCarree(), zorder=1)
+    ax.contour(lon_cyc, lat, data_cyc, levels=levels, colors='black', linewidths=0.2,
+               transform=ccrs.PlateCarree(), zorder=1)
     
     ax.set_title(f"{variable} - {hemisphere}", fontweight="bold")
     cb = plt.colorbar(imf, orientation='horizontal', fraction=0.046, pad=0.04)
