@@ -60,18 +60,24 @@ def plot_data(variable, hemisphere, projection, extent, filename, levels, factor
     depth_index = 3  # Choosing a consistent depth level
     data_2d = factor * data_model_mean[exp_name][depth_index, :, :]
 
-    # Close the seam at lon=0/360 with add_cyclic_point so the contour
-    # algorithm sees a continuous strip across the dateline. Use the 1-D
-    # coords directly with the default transform_first=False — the
-    # combination of transform_first=True + 2-D meshgridded X/Y produced
-    # a polar-stereo rendering full of vertical-stripe artifacts (the
-    # contour algorithm got fed projection-distorted, pole-collapsed
-    # points and tried to draw boundaries between every adjacent column).
+    # Polar contour needs two coordinated tweaks:
+    #  - add_cyclic_point closes the seam at lon=0/360 (without this a
+    #    vertical stripe streaks across the polar plot at the dateline)
+    #  - drop the pole rows from the data (lat=+-90). The cyclic strip
+    #    collapses to a single geometric point at the pole, so contour
+    #    produces degenerate "multi-polygons" that cartopy/shapely then
+    #    rejects with "Sequences of multi-polygons are not valid
+    #    arguments". Trimming the +-90 row leaves the visible map intact
+    #    (set_extent crops short of the actual pole anyway) but avoids
+    #    the wrap.
     data_cyc, lon_cyc = add_cyclic_point(data_2d, coord=lon)
-    imf = ax.contourf(lon_cyc, lat, data_cyc, cmap=new_cmap, levels=levels, extend=extend,
-                      transform=ccrs.PlateCarree(), zorder=1)
-    ax.contour(lon_cyc, lat, data_cyc, levels=levels, colors='black', linewidths=0.2,
-               transform=ccrs.PlateCarree(), zorder=1)
+    pole_mask = (lat > -90) & (lat < 90)
+    lat_trim = lat[pole_mask]
+    data_trim = data_cyc[pole_mask, :]
+    imf = ax.contourf(lon_cyc, lat_trim, data_trim, cmap=new_cmap, levels=levels,
+                      extend=extend, transform=ccrs.PlateCarree(), zorder=1)
+    ax.contour(lon_cyc, lat_trim, data_trim, levels=levels, colors='black',
+               linewidths=0.2, transform=ccrs.PlateCarree(), zorder=1)
     
     ax.set_title(f"{variable} - {hemisphere}", fontweight="bold")
     cb = plt.colorbar(imf, orientation='horizontal', fraction=0.046, pad=0.04)

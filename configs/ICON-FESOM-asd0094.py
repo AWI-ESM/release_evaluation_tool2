@@ -78,11 +78,13 @@ from bg_routines.colormap_c2c    import *
 # Simulation Configuration #
 ############################
 
-# ICON-FESOM smoke-test config. The same single source run (a 150-year
-# spinup `asd0094`) is pointed at all three of spinup / pi_ctrl /
-# historic for the test — so historic-vs-obs plots will look nonsensical,
-# but every script gets exercised end-to-end on the new model.
-model_version  = 'ICON-FESOM-asd0094-test3y'
+# ICON-FESOM full-spinup config. The asd0094 spinup is 150 years
+# (1958-2107). spinup covers the full run; pi_ctrl and historic point at
+# the same workspace but only sample the last 25 yr (2083-2107) for the
+# climatology / bias / vs-obs plots. This keeps the long-timeline plots
+# (rad budget, Gregory drift, ENSO statistics) on the full run while the
+# climatology windows stay tight and modern.
+model_version  = 'ICON-FESOM-asd0094'
 oasis_oifs_grid_name = 'atmo'
 
 # Single source for atm + ocean. Atm side was pre-remapped from ICON's
@@ -91,17 +93,17 @@ oasis_oifs_grid_name = 'atmo'
 # on its CORE2 mesh and is read directly.
 spinup_path    = '/work/ab0246/a270092/runtime/ICON_FESOM_asd0094/outdata/'
 spinup_name    = model_version + '_spinup'
-spinup_start   = 2105
+spinup_start   = 1958
 spinup_end     = 2107
 
 pi_ctrl_path   = spinup_path
 pi_ctrl_name   = model_version + '_pi-control'
-pi_ctrl_start  = spinup_start
+pi_ctrl_start  = spinup_end - 24
 pi_ctrl_end    = spinup_end
 
 historic_path  = spinup_path
 historic_name  = model_version + '_historic'
-historic_start = spinup_start
+historic_start = spinup_end - 24
 historic_end   = spinup_end
 
 
@@ -109,10 +111,10 @@ historic_end   = spinup_end
 reanalysis             = 'ERA5'
 remap_resolution       = '512x256'
 dpi                    = 300
-# Real historic configs (AWI-ESM2/3) are 170 yr long and want the last
-# 25 yr only so the mean represents the modern (not mid-transient)
-# climate. For this 3-year smoke test the window is the whole run.
-clim_window_years      = spinup_end - spinup_start + 1
+# Last 25 yr of the spinup. Real historic configs use the same number
+# (170-yr historic → last 25 yr); the smoke-test 3-yr config sets this
+# smaller via clim_window_years.
+clim_window_years      = 25
 historic_last25y_start = historic_end - (clim_window_years - 1)
 historic_last25y_end   = historic_end
 status_csv             = "log/status.csv"
