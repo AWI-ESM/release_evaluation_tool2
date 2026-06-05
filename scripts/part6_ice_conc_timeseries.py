@@ -153,19 +153,20 @@ ax1.yaxis.grid(color='gray', linestyle='dashed')
 
 _split = spinup_end
 plt.axvline(x=_split,color='black',alpha=0.7,linewidth=3)
-# Position the SPIN / HIST&PICT labels relative to the actual axis
-# span so they don't sit far outside the data range when the run is
-# only a few years long (bbox_inches='tight' otherwise inflates the
-# figure to encompass the text, blowing past matplotlib's 2**16-pixel
-# Agg limit).
-_xspan = abs(ax1.get_xlim()[1] - ax1.get_xlim()[0])
-_label_offset = max(10.0, 0.04 * _xspan)
-plt.text(_split + _label_offset, ax1.get_ylim()[1]-2,'HIST & PICT',fontsize=15)
-plt.text(_split - _label_offset*4, ax1.get_ylim()[1]-2,'SPIN',fontsize=15)
-ax1.set_xlim(ax1.get_xlim())  # freeze so subsequent text doesn't auto-expand
+# Position the SPIN / HIST&PICT labels in *axis-relative* coordinates
+# (0-1 along each axis) so they always stay inside the axis bounds
+# regardless of the data x-range. Previously they were placed at
+# _split+-10/40 in data coords, which for a 3-year smoke-test run sat
+# ~40 years outside the data; bbox_inches='tight' then inflated the
+# figure past matplotlib's 2**16-pixel Agg limit (Image size 116679x...).
+ax1.text(0.97, 0.97, 'HIST & PICT', transform=ax1.transAxes,
+         ha='right', va='top', fontsize=15)
+ax1.text(0.03, 0.97, 'SPIN', transform=ax1.transAxes,
+         ha='left', va='top', fontsize=15)
 
 # Scale x-tick density to the timeline length: 50 yr majors / 10 yr minors
 # work for the multi-millennium spinup but produce no ticks on a 3-yr run.
+_xspan = abs(ax1.get_xlim()[1] - ax1.get_xlim()[0])
 _majstep = max(1, int(_xspan / 10))
 _minstep = max(1, int(_majstep / 5))
 ax1.xaxis.set_major_locator(MultipleLocator(_majstep))
@@ -300,19 +301,20 @@ ax1.yaxis.grid(color='gray', linestyle='dashed')
 
 _split = spinup_end
 plt.axvline(x=_split,color='black',alpha=0.7,linewidth=3)
-# Position the SPIN / HIST&PICT labels relative to the actual axis
-# span so they don't sit far outside the data range when the run is
-# only a few years long (bbox_inches='tight' otherwise inflates the
-# figure to encompass the text, blowing past matplotlib's 2**16-pixel
-# Agg limit).
-_xspan = abs(ax1.get_xlim()[1] - ax1.get_xlim()[0])
-_label_offset = max(10.0, 0.04 * _xspan)
-plt.text(_split + _label_offset, ax1.get_ylim()[1]-2,'HIST & PICT',fontsize=15)
-plt.text(_split - _label_offset*4, ax1.get_ylim()[1]-2,'SPIN',fontsize=15)
-ax1.set_xlim(ax1.get_xlim())  # freeze so subsequent text doesn't auto-expand
+# Position the SPIN / HIST&PICT labels in *axis-relative* coordinates
+# (0-1 along each axis) so they always stay inside the axis bounds
+# regardless of the data x-range. Previously they were placed at
+# _split+-10/40 in data coords, which for a 3-year smoke-test run sat
+# ~40 years outside the data; bbox_inches='tight' then inflated the
+# figure past matplotlib's 2**16-pixel Agg limit (Image size 116679x...).
+ax1.text(0.97, 0.97, 'HIST & PICT', transform=ax1.transAxes,
+         ha='right', va='top', fontsize=15)
+ax1.text(0.03, 0.97, 'SPIN', transform=ax1.transAxes,
+         ha='left', va='top', fontsize=15)
 
 # Scale x-tick density to the timeline length: 50 yr majors / 10 yr minors
 # work for the multi-millennium spinup but produce no ticks on a 3-yr run.
+_xspan = abs(ax1.get_xlim()[1] - ax1.get_xlim()[0])
 _majstep = max(1, int(_xspan / 10))
 _minstep = max(1, int(_majstep / 5))
 ax1.xaxis.set_major_locator(MultipleLocator(_majstep))

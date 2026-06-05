@@ -27,9 +27,15 @@ input_names = [historic_name, pi_ctrl_name]
 # range shared across paths. With separate historic / pi_ctrl runs (e.g.
 # hist_1x1 1850-2019 vs. PI_wisofix_c last 170y), the historic_last25y
 # range only exists in the historic workspace.
+# Window length is configurable so short smoke-test configs (e.g.
+# the ICON-FESOM 3-year run) can use the entire run without trying to
+# read years before the start. Default is the original 25-year window;
+# real historic configs (170 y or longer) should keep this default so
+# we sample only the modern climate, not a mid-transient period.
+_clim_window = globals().get('clim_window_years', 25)
 years_per_path = {
-    historic_name: range(historic_end - 24, historic_end + 1),
-    pi_ctrl_name:  range(pi_ctrl_end  - 24, pi_ctrl_end  + 1),
+    historic_name: range(historic_end - (_clim_window - 1), historic_end + 1),
+    pi_ctrl_name:  range(pi_ctrl_end  - (_clim_window - 1), pi_ctrl_end  + 1),
 }
 # Kept for backward compat with downstream code referencing `years`.
 years = years_per_path[historic_name]

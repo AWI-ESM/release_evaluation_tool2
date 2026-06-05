@@ -106,12 +106,19 @@ batch_size = 20  # Process files in batches
 
 data = OrderedDict()
 for variable in variables:
+    skip_this_var = False
     for exp_path, exp_name in zip(input_paths, input_names):
         file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years_per_var[variable]]
         existing = [f for f in file_paths if os.path.exists(f)]
         print(f"Processing {variable} for {exp_name}: {len(existing)} files")
+        if not existing:
+            print(f"  no {variable}.fesom.<year>.nc files in {exp_path} -- skipping {variable}")
+            skip_this_var = True
+            break
         result = load_merged(variable, existing, remap_resolution, meshpath, mesh_file)
         data[exp_name] = result[np.newaxis, ...] if result.ndim < 4 else result
+    if skip_this_var:
+        continue
 
 
     # -------------------------------

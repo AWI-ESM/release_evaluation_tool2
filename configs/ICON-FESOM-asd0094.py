@@ -109,7 +109,11 @@ historic_end   = spinup_end
 reanalysis             = 'ERA5'
 remap_resolution       = '512x256'
 dpi                    = 300
-historic_last25y_start = historic_end - (spinup_end - spinup_start)
+# Real historic configs (AWI-ESM2/3) are 170 yr long and want the last
+# 25 yr only so the mean represents the modern (not mid-transient)
+# climate. For this 3-year smoke test the window is the whole run.
+clim_window_years      = spinup_end - spinup_start + 1
+historic_last25y_start = historic_end - (clim_window_years - 1)
 historic_last25y_end   = historic_end
 status_csv             = "log/status.csv"
 
