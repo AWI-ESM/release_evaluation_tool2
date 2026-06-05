@@ -70,11 +70,22 @@ for exp_path, exp_name in zip(input_paths, input_names):
         chunk = file_paths[i:i + chunk_size]
         chunk_t = [dask.delayed(load_parallel_fldmean)(variable, f, meshpath, mesh_file) for f in chunk]
         with ProgressBar():
-            datat_chunk = dask.compute(*chunk_t, scheduler='threads')
+            datat_chunk = dask.compute(*chunk_t, scheduler='synchronous')
         datat.extend(datat_chunk)
         print(f"  Batch {i//chunk_size + 1}/{math.ceil(len(file_paths)/chunk_size)} done")
-    
-    data_full = np.array(datat, dtype=np.float32)
+
+    # Per-year results can have mixed shape: some files give (depths,), some
+    # (timesteps, depths). Collapse any non-trailing axis by mean, then
+    # truncate to a common depth count so np.array yields (years, depths).
+    arrs = []
+    for d in datat:
+        a = np.atleast_1d(np.asarray(d))
+        while a.ndim > 1:
+            a = np.nanmean(a, axis=0)
+        arrs.append(a)
+    min_depth = min(a.shape[-1] for a in arrs)
+    arrs = [a[:min_depth] for a in arrs]
+    data_full = np.array(arrs, dtype=np.float32)
     n_common = min(n_ref_depths, data_full.shape[1])
     data[exp_name] = data_full[:, :n_common]
     
