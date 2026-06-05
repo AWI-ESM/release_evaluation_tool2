@@ -155,6 +155,8 @@ scripts_overrides = {
     "part11_zonal_plots.py":     False,
     "part12_qbo.py":             False,
     "part22_masks.py":           False,
+    # lcc (low cloud cover) not produced by AWI-ESM2 echam preproc yet.
+    "part10_clt_vs_modis.py":    False,
     # part4_cmpi.py expects to re-run the AWI-CM3 XIOS preprocessor against
     # `model_version`; for AWI-ESM2 runs cmpitool is executed standalone and
     # its csv lives in cmpitool/eval/ERA5/ already.

@@ -44,21 +44,26 @@ def load_yearly_data_simple(path, var):
             print(f"WARNING: Missing file {path}")
             return None
             
-        # Load single file with simple time decoding
-        ds = xr.open_dataset(path, decode_times=True, use_cftime=True, chunks={'time_counter': 12})
-        
+        # Load single file with simple time decoding.
+        # AWI-ESM3 XIOS uses `time_counter`; the AWI-ESM2 echam preprocessor
+        # emits `time` instead, so chunk and groupby on whichever exists.
+        ds = xr.open_dataset(path, decode_times=True, use_cftime=True)
+
+        time_dim = 'time_counter' if 'time_counter' in ds.dims else 'time'
+        ds = ds.chunk({time_dim: 12})
+
         # Get the variable data
         var_data = ds[var]
-        
+
         # Normalize by accumulation period ONLY for flux variables (not temperature)
         if var != '2t':  # Don't normalize temperature
             var_data = var_data / accumulation_period
-        
+
         # Calculate global area mean
         global_mean = global_area_mean(var_data)
-        
+
         # Convert to yearly mean using groupby
-        yearly_data = global_mean.groupby('time_counter.year').mean()
+        yearly_data = global_mean.groupby(f'{time_dim}.year').mean()
         
         # Force computation to avoid lazy evaluation
         yearly_data = yearly_data.compute()
@@ -375,7 +380,10 @@ for var in ['precip','temp']:
                 t.append(temporary)
 
             with ProgressBar():
-                datat = dask.compute(*t, scheduler='threads')
+                # Default dask scheduler is threads; cdo's CdoTempfileStore finalizer
+                # races with readArray under threads and randomly deletes temp files
+                # mid-read. Force synchronous for cdo-backed delayed tasks.
+                datat = dask.compute(*t, scheduler='synchronous')
             data[exp_name][v] = np.array([np.squeeze(d) for d in datat])
 
     paths = []
@@ -392,7 +400,10 @@ for var in ['precip','temp']:
                 t.append(temporary)
 
             with ProgressBar():
-                datat = dask.compute(*t, scheduler='threads')
+                # Default dask scheduler is threads; cdo's CdoTempfileStore finalizer
+                # races with readArray under threads and randomly deletes temp files
+                # mid-read. Force synchronous for cdo-backed delayed tasks.
+                datat = dask.compute(*t, scheduler='synchronous')
             data_ctrl[exp_name][v] = np.array([np.squeeze(d) for d in datat])
             
 def resample(xyobs,n,m):

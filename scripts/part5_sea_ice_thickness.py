@@ -22,7 +22,16 @@ remap_resolution= '360x180'
 variable = 'm_ice'
 input_paths = [historic_path, pi_ctrl_path]
 input_names = [historic_name, pi_ctrl_name]
-years = range(historic_last25y_start, historic_last25y_end+1)
+# Use the last 25y of each respective period rather than a single year
+# range shared across paths. With separate historic / pi_ctrl runs (e.g.
+# hist_1x1 1850-2019 vs. PI_wisofix_c last 170y), the historic_last25y
+# range only exists in the historic workspace.
+years_per_path = {
+    historic_name: range(historic_end - 24, historic_end + 1),
+    pi_ctrl_name:  range(pi_ctrl_end  - 24, pi_ctrl_end  + 1),
+}
+# Kept for backward compat with downstream code referencing `years`.
+years = years_per_path[historic_name]
 
 res=[180,180]
 figsize=(6,6)
@@ -72,7 +81,7 @@ for exp_path, exp_name  in zip(input_paths, input_names):
     datat = []
     t = []
     temporary = []
-    for year in tqdm(years):
+    for year in tqdm(years_per_path[exp_name]):
         path = exp_path+'/fesom/'+variable+'.fesom.'+str(year)+'.nc'
         temporary = dask.delayed(load_parallel)(variable,path,remap_resolution,meshpath,mesh_file)
         t.append(temporary)
