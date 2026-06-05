@@ -155,7 +155,10 @@ scripts_overrides = {
     "part11_zonal_plots.py":     False,
     "part12_qbo.py":             False,
     "part22_masks.py":           False,
-    # lcc (low cloud cover) not produced by AWI-ESM2 echam preproc yet.
+    # ssrd (surface downward shortwave) and lcc (low cloud cover) are
+    # not produced by the AWI-ESM2 echam preproc yet; part9 needs ssrd
+    # for CRF computation, part10 needs lcc.
+    "part9_rad_vs_ceres.py":     False,
     "part10_clt_vs_modis.py":    False,
     # part4_cmpi.py expects to re-run the AWI-CM3 XIOS preprocessor against
     # `model_version`; for AWI-ESM2 runs cmpitool is executed standalone and

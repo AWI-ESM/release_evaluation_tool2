@@ -82,7 +82,12 @@ input_names = [historic_name]
 ctrl_input_paths = [pi_ctrl_path]
 ctrl_input_names = [pi_ctrl_name]
 
+# Use separate year ranges for historic and pi_ctrl. AWI-ESM3 configs
+# share start/end across both, so this resolves to the same list and
+# the behaviour is unchanged. AWI-ESM2 configs have distinct ranges
+# (e.g. historic 1850-2019, pi_ctrl 5831-6000).
 exps = list(range(historic_start, historic_end+1))
+ctrl_exps = list(range(pi_ctrl_start, pi_ctrl_end+1))
 
 climatology_path = [observation_path+'/HadCRUT5/']
 climatology_names = ['HadCRUT5']
@@ -143,9 +148,9 @@ ctrl_data[v] = []
 
 for exp_path, exp_name in zip(ctrl_input_paths, ctrl_input_names):
     print(f"Processing {exp_name}...")
-    
+
     ctrl_results = []
-    for exp in tqdm(exps):
+    for exp in tqdm(ctrl_exps):
         path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
         yearly_mean = load_yearly_data_simple(path, var)
         if yearly_mean is not None:
