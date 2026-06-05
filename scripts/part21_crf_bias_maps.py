@@ -4,6 +4,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
 from bg_routines.metrics import md
+from bg_routines.ipcc_cmaps import get_bias_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -29,7 +30,7 @@ exps = list(range(historic_last25y_start, historic_last25y_end+1))
 
 climatology_file = 'CERES_EBAF_Ed4.1_Subset_CLIM01-CLIM12.nc'
 climatology_path = observation_path + '/CERES/'
-figsize = (6, 4.5)
+figsize = (9, 5)
 contour_outline_thickness = 0
 
 # Map plotting parameters - using same levels as part9_rad_vs_ceres.py
@@ -92,8 +93,8 @@ def load_model_crf_data(exp_path, exp_name, years):
             print(f"ERROR: No files found for {var}")
             return None
             
-        # Load and process files. AWI-ESM3 XIOS uses time_counter; the
-        # AWI-ESM2 echam preprocessor uses time. Detect at chunk time.
+        # Load and process files. AWI-CM3 XIOS uses `time_counter`;
+        # the AWI-ESM2 echam preprocessor uses `time`.
         ds = xr.open_mfdataset(files, combine="by_coords", parallel=False,
                              decode_times=True, use_cftime=True,
                              combine_attrs='drop_conflicts')
@@ -193,9 +194,9 @@ if ceres_data is None:
 
 # Create plots for each CRF component
 crf_components = [
-    ('swcrf', mapticks, 'Shortwave Cloud Radiative Forcing', 'PuOr_r'),
-    ('lwcrf', mapticks, 'Longwave Cloud Radiative Forcing', 'PuOr_r'), 
-    ('net_crf', mapticks, 'Net Cloud Radiative Forcing', 'PuOr_r')
+    ('swcrf', mapticks, 'Shortwave Cloud Radiative Forcing', get_bias_cmap('ssr')),
+    ('lwcrf', mapticks, 'Longwave Cloud Radiative Forcing', get_bias_cmap('str')),
+    ('net_crf', mapticks, 'Net Cloud Radiative Forcing', get_bias_cmap('rlut')),
 ]
 
 for crf_type, levels, title_base, cmap in crf_components:
@@ -204,7 +205,7 @@ for crf_type, levels, title_base, cmap in crf_components:
     # Define figure layout
     nrows, ncol = define_rowscol(input_paths)
     fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize, 
-                           subplot_kw={'projection': ccrs.PlateCarree()}, dpi=dpi)
+                           subplot_kw={'projection': ccrs.EqualEarth()}, dpi=dpi)
     
     if isinstance(axes, np.ndarray):
         axes = axes.flatten()
@@ -220,7 +221,8 @@ for crf_type, levels, title_base, cmap in crf_components:
         model_data = load_model_crf_data(exp_path, exp_name, exps)
         if model_data is None:
             print(f"  ERROR: Could not load model data for {exp_name}")
-            continue
+            update_status(SCRIPT_NAME, " Skipped (data load failed)")
+            sys.exit(0)
         
         # Get coordinates
         lat = model_data[crf_type].lat.values
@@ -238,6 +240,7 @@ for crf_type, levels, title_base, cmap in crf_components:
         rmsd, mean_bias = calculate_statistics(model_vals, ceres_vals, lat)
         
         # Add map features
+        ax.set_global()
         ax.add_feature(cfeature.COASTLINE, zorder=3)
         
         # Contour plot
@@ -257,7 +260,7 @@ for crf_type, levels, title_base, cmap in crf_components:
         
         # Gridlines
         gl = ax.gridlines(draw_labels=True, linewidth=1, color='gray', alpha=0.2, linestyle='-')
-        gl.xlabels_bottom = False
+        gl.bottom_labels = False
         
         # Statistics text boxes
         textrmsd = f'rmsd={rmsd:.2f}'
@@ -266,11 +269,11 @@ for crf_type, levels, title_base, cmap in crf_components:
         
         ax.text(0.02, 0.35, textrmsd, transform=ax.transAxes, fontsize=13,
                 verticalalignment='top', bbox=props, zorder=4)
-        ax.text(0.02, 0.25, textbias, transform=ax.transAxes, fontsize=13,
+        ax.text(0.12, 0.15, textbias, transform=ax.transAxes, fontsize=13,
                 verticalalignment='top', bbox=props, zorder=4)
     
     # Colorbar
-    cbar_ax = fig.add_axes([0.15, 0.11, 0.7, 0.05])
+    cbar_ax = fig.add_axes([0.15, 0.06, 0.7, 0.04])
     cbar_ax.tick_params(labelsize=12)
     cb = fig.colorbar(imf, cax=cbar_ax, orientation='horizontal', ticks=mapticks)
     cb.set_label(label="W/m²", size=14)

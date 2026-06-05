@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
+from bg_routines.ipcc_cmaps import get_abs_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -55,7 +56,7 @@ def plot_data(variable, hemisphere, projection, extent, filename, levels, factor
     ax = plt.axes(projection=projection)
     ax.add_feature(cfeature.COASTLINE, zorder=3)
     ax.set_extent(extent, ccrs.PlateCarree())
-    
+
     depth_index = 3  # Choosing a consistent depth level
     data_2d = factor * data_model_mean[exp_name][depth_index, :, :]
 
@@ -85,10 +86,17 @@ def plot_data(variable, hemisphere, projection, extent, filename, levels, factor
 # Initialization
 # -------------------------------
 
-variables = ['MLD2', 'a_ice']
+variables = ['MLD2', 'MLD3', 'a_ice']
 input_paths = [historic_path+'/fesom/']
 input_names = [historic_name]
+# All climatologies use the standard last-25y window of the historic
+# period — same windowed-mean computation across MLD and a_ice.
 years = range(historic_last25y_start, historic_last25y_end+1)
+years_per_var = {
+    'MLD2':  years,
+    'MLD3':  years,
+    'a_ice': years,
+}
 batch_size = 20  # Process files in batches
 
 
@@ -99,7 +107,7 @@ batch_size = 20  # Process files in batches
 data = OrderedDict()
 for variable in variables:
     for exp_path, exp_name in zip(input_paths, input_names):
-        file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years]
+        file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years_per_var[variable]]
         existing = [f for f in file_paths if os.path.exists(f)]
         print(f"Processing {variable} for {exp_name}: {len(existing)} files")
         result = load_merged(variable, existing, remap_resolution, meshpath, mesh_file)
@@ -142,14 +150,17 @@ for variable in variables:
         if variable == 'a_ice':
             levels = [1,10,20,30,40,50,60,70,80,90,100]
             factor = 100
-            new_cmap = truncate_colormap(cmo.cm.ice, 0.15, 1)
+            # Use the full IPCC cryo_seq palette (no truncation) so the
+            # full sea-ice colour range is shown.
+            new_cmap = get_abs_cmap('a_ice')
             extend = 'min'
         else:
             levels = [0, 0.2, 0.5,  1,  2, 2.5,  3, 3.5, 4]
             factor = -0.001
-            new_cmap = truncate_colormap(plt.cm.PuOr, 0.5, 1)
+            new_cmap = truncate_colormap(get_abs_cmap('MLD3'), 0.0, 1)
             extend = 'both'
         
+        # Hemisphere-focused plots: use polar stereo, not EqualEarth.
         plot_data(variable, 'Southern Hemisphere', ccrs.SouthPolarStereo(), [-180, 180, -55, -90], f"{variable}_SH.png", levels, factor, new_cmap, extend)
         plot_data(variable, 'Northern Hemisphere', ccrs.NorthPolarStereo(), [-180, 180, 50, 90], f"{variable}_NH.png", levels, factor, new_cmap, extend)
 

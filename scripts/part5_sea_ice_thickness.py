@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
+from bg_routines.ipcc_cmaps import get_abs_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -86,10 +87,10 @@ for exp_path, exp_name  in zip(input_paths, input_names):
         temporary = dask.delayed(load_parallel)(variable,path,remap_resolution,meshpath,mesh_file)
         t.append(temporary)
 
+    # Default dask scheduler is threads; cdo's CdoTempfileStore finalizer
+    # races with readArray under threads and randomly deletes temp files
+    # mid-read. Force synchronous for cdo-backed delayed tasks.
     with ProgressBar():
-        # Default dask scheduler is threads; cdo's CdoTempfileStore finalizer
-        # races with readArray under threads and randomly deletes temp files
-        # mid-read. Force synchronous for cdo-backed delayed tasks.
         datat = dask.compute(t, scheduler='synchronous')
     data[exp_name] = np.array([np.squeeze(d) for d in datat[0]])
 
@@ -119,7 +120,7 @@ nrows, ncol = define_rowscol(input_paths)
 
 figsize=(6,6)
 
-new_cmap = truncate_colormap(cmo.cm.ice, 0.15, 1)
+new_cmap = truncate_colormap(get_abs_cmap('m_ice'), 0.15, 1)
 
 for seas in ['September','March']:
     if seas == 'March':
@@ -133,8 +134,11 @@ for seas in ['September','March']:
 
             fig =plt.figure(figsize=(6,6))
 
+            # Hemisphere plots use polar-stereo, not EqualEarth — the
+            # latter collapses a polar latitude band into a horizontal
+            # strip.
             if hemi == 'SH':
-                levels=[0.1,0.2,0.4,0.6,0.8,1,1.2,1.4,1.6,1.8,2]   
+                levels=[0.1,0.2,0.4,0.6,0.8,1,1.2,1.4,1.6,1.8,2]
                 ax=plt.axes(projection=ccrs.SouthPolarStereo())
                 ax.set_extent([-180,180,-55,-90], ccrs.PlateCarree())
 
@@ -180,7 +184,7 @@ import cmocean as cmo
 
 #levels = np.linspace(0,100,11).astype(int)
 #factor=100
-new_cmap = truncate_colormap(cmo.cm.ice, 0.15, 1)
+new_cmap = truncate_colormap(get_abs_cmap('m_ice'), 0.15, 1)
 extend='both'
 
 # Load model data
@@ -237,8 +241,11 @@ for seas in ['September','March']:
 
             fig =plt.figure(figsize=(6,6))
 
+            # Hemisphere plots use polar-stereo, not EqualEarth — the
+            # latter collapses a polar latitude band into a horizontal
+            # strip.
             if hemi == 'SH':
-                levels=[0.1,0.2,0.4,0.6,0.8,1,1.2,1.4,1.6,1.8,2]   
+                levels=[0.1,0.2,0.4,0.6,0.8,1,1.2,1.4,1.6,1.8,2]
                 ax=plt.axes(projection=ccrs.SouthPolarStereo())
                 ax.set_extent([-180,180,-55,-90], ccrs.PlateCarree())
 

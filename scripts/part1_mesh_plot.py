@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
+from bg_routines.ipcc_cmaps import get_abs_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -14,7 +15,7 @@ update_status(SCRIPT_NAME, " Started")
 
 
 #levels = np.linspace(5, 30, 11)
-figsize=(6,4.5)
+figsize=(9, 5)
 
 mesh = pf.load_mesh(meshpath)
 data = xr.open_dataset(meshpath+'/fesom.mesh.diag.nc')
@@ -22,7 +23,7 @@ nod_area = data['nod_area'][0,:].values
 nod_area = (np.sqrt(nod_area/np.pi)/1e3)*2
 
 data=nod_area,
-cmap=cmo.cm.thermal_r,
+cmap=get_abs_cmap('mesh_res'),
 influence=1600000,
 interp="nn",
 mapproj="pc",
@@ -78,14 +79,15 @@ interpolated = pf.interpolate_for_plot(
 
 data_model_mean = OrderedDict()
 
-fig, ax = plt.subplots(nrows=1, ncols=1,figsize=figsize, subplot_kw={'projection': ccrs.Robinson(central_longitude=0)})
+fig, ax = plt.subplots(nrows=1, ncols=1,figsize=figsize, subplot_kw={'projection': ccrs.EqualEarth()})
 
+ax.set_global()
 ax.add_feature(cfeature.COASTLINE,zorder=3)
 
-#imf=plt.contourf(lonreg, latreg, np.squeeze(interpolated), cmap=cmo.cm.thermal_r, 
+#imf=plt.contourf(lonreg, latreg, np.squeeze(interpolated), cmap=get_abs_cmap('mesh_res'), 
 #                 levels=levels, extend='both',
 #                 transform=ccrs.PlateCarree(),zorder=1)
-imf=plt.contourf(lonreg, latreg, np.squeeze(interpolated), cmap=cmo.cm.thermal_r, 
+imf=plt.contourf(lonreg, latreg, np.squeeze(interpolated), cmap=get_abs_cmap('mesh_res'), 
                  extend='both',
                  transform=ccrs.PlateCarree(),zorder=1)
 
@@ -97,9 +99,10 @@ plt.tight_layout()
 
 gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
               linewidth=1, color='gray', alpha=0.2, linestyle='-')
-gl.xlabels_bottom = False
+gl.bottom_labels = False
 
-cbar_ax_abs = fig.add_axes([0.15, 0.11, 0.7, 0.05])
+fig.subplots_adjust(bottom=0.18, top=0.95, left=0.05, right=0.95)
+cbar_ax_abs = fig.add_axes([0.15, 0.06, 0.7, 0.04])
 cbar_ax_abs.tick_params(labelsize=12)
 
 #every_other_tick = levels[::2]  # Select every other level for labeling

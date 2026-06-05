@@ -4,6 +4,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
 from bg_routines.cavity_mask import check_use_cavity, get_cavity_element_mask, get_cavity_node_mask
+from bg_routines.ipcc_cmaps import get_abs_cmap
 from matplotlib.collections import PolyCollection, LineCollection
 from matplotlib.tri import Triangulation, LinearTriInterpolator
 
@@ -214,7 +215,7 @@ def create_multi_panel_figure(cavity_name, cavity_info, elem_lon, elem_lat,
         
         # Plot velocity magnitude as filled contours
         levels = np.linspace(0, 0.1, 21)
-        cf = ax1.contourf(LON, LAT, vel_interp, levels=levels, cmap=cmo.cm.speed, extend='max')
+        cf = ax1.contourf(LON, LAT, vel_interp, levels=levels, cmap=get_abs_cmap('speed'), extend='max')
         
         # Add velocity arrows (subsampled)
         skip = 5
@@ -223,7 +224,7 @@ def create_multi_panel_figure(cavity_name, cavity_info, elem_lon, elem_lat,
                    scale=1.5, width=0.004, headwidth=4, headlength=5,
                    color='black', alpha=0.7)
     else:
-        cf = ax1.scatter(cav_lon, cav_lat, c=vel_mag, cmap=cmo.cm.speed, 
+        cf = ax1.scatter(cav_lon, cav_lat, c=vel_mag, cmap=get_abs_cmap('speed'), 
                         s=20, vmin=0, vmax=0.1)
     
     ax1.set_xlabel('Longitude (°)', fontsize=11)
@@ -261,7 +262,7 @@ def create_multi_panel_figure(cavity_name, cavity_info, elem_lon, elem_lat,
     
     levels_sec = np.linspace(0, 0.1, 21)
     cf2 = ax2.contourf(LAT_SEC, DEPTH_SEC, binned_vel, levels=levels_sec, 
-                       cmap=cmo.cm.speed, extend='max')
+                       cmap=get_abs_cmap('speed'), extend='max')
     ax2.contour(LAT_SEC, DEPTH_SEC, binned_vel, levels=[0.02, 0.04, 0.06, 0.08],
                 colors='black', linewidths=0.5, alpha=0.5)
     
@@ -294,9 +295,9 @@ def create_multi_panel_figure(cavity_name, cavity_info, elem_lon, elem_lat,
         if np.sum(valid) > 10:
             temp_interp = griddata((cav_temp_lon[valid], cav_temp_lat[valid]), bottom_temp[valid],
                                    (LON_T, LAT_T), method='linear')
-            cf3 = ax3.contourf(LON_T, LAT_T, temp_interp, levels=20, cmap=cmo.cm.thermal)
+            cf3 = ax3.contourf(LON_T, LAT_T, temp_interp, levels=20, cmap=get_abs_cmap('thetao'))
         else:
-            cf3 = ax3.scatter(cav_temp_lon, cav_temp_lat, c=bottom_temp, cmap=cmo.cm.thermal, s=20)
+            cf3 = ax3.scatter(cav_temp_lon, cav_temp_lat, c=bottom_temp, cmap=get_abs_cmap('thetao'), s=20)
         
         ax3.set_xlabel('Longitude (°)', fontsize=11)
         ax3.set_ylabel('Latitude (°)', fontsize=11)
@@ -323,7 +324,7 @@ def create_multi_panel_figure(cavity_name, cavity_info, elem_lon, elem_lat,
                 binned_temp[:, i] = np.nanmean(sorted_temp[:, bin_mask], axis=1)
         
         LAT_T_SEC, DEPTH_T_SEC = np.meshgrid(temp_lat_centers, -depths)
-        cf4 = ax4.contourf(LAT_T_SEC, DEPTH_T_SEC, binned_temp, levels=20, cmap=cmo.cm.thermal)
+        cf4 = ax4.contourf(LAT_T_SEC, DEPTH_T_SEC, binned_temp, levels=20, cmap=get_abs_cmap('thetao'))
         ax4.contour(LAT_T_SEC, DEPTH_T_SEC, binned_temp, levels=10, colors='black', 
                    linewidths=0.3, alpha=0.5)
         
@@ -393,6 +394,9 @@ def create_cavity_figure(cavity_name, cavity_info, elem_lon, elem_lat, u_data, v
     
     standalone = ax is None
     if standalone:
+        # Cavity plots focus on small Antarctic regions; SouthPolarStereo
+        # centred on each cavity gives the cleanest framing. EqualEarth
+        # would compress these into a useless horizontal sliver.
         proj = ccrs.SouthPolarStereo(central_longitude=cavity_info.get('central_lon', 0))
         fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': proj})
     
@@ -400,7 +404,7 @@ def create_cavity_figure(cavity_name, cavity_info, elem_lon, elem_lat, u_data, v
     collection = PolyCollection(
         tri_verts[good],
         array=vel_mag[good],
-        cmap=cmo.cm.speed,
+        cmap=get_abs_cmap('speed'),
         edgecolors='none',
         linewidths=0,
         transform=ccrs.PlateCarree(),
@@ -537,6 +541,9 @@ print("\nCreating summary figure...")
 fig = plt.figure(figsize=(16, 14))
 
 for idx, (cavity_name, cavity_info) in enumerate(ice_cavities.items()):
+    # Cavity plots focus on small Antarctic regions; SouthPolarStereo
+    # centred on each cavity gives the cleanest framing. EqualEarth
+    # would compress these into a useless horizontal sliver.
     proj = ccrs.SouthPolarStereo(central_longitude=cavity_info.get('central_lon', 0))
     ax = fig.add_subplot(2, 2, idx + 1, projection=proj)
     

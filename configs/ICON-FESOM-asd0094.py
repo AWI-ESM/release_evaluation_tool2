@@ -116,7 +116,7 @@ status_csv             = "log/status.csv"
 # FESOM2 CORE2 mesh shipped alongside the ICON-FESOM run.
 mesh_name      = 'CORE2'
 grid_name      = 'CORE2'
-meshpath       = '/work/bk1415/a270044/YET_ON_YAC/icon-fesom/exp009/fesom/FESOM2_one_year_input/mesh/core2/'
+meshpath       = '/work/ab0246/a270092/input/fesom2/core2_icon_fesom/'
 mesh_file      = 'core2_griddes_nodes.nc'
 griddes_file   = 'core2_griddes_nodes.nc'
 abg            = [0, 0, 0]
@@ -153,6 +153,9 @@ scripts_overrides = {
     "part11_zonal_plots.py":     False,
     "part12_qbo.py":             False,
     "part16_clim_change.py":     False,
+    # part18 needs `cp` (convective precip) which ICON doesn't split out
+    # of tot_prec_rate in atm_2d_ml.
+    "part18_precip_vs_gpcp.py":  False,
     "part22_masks.py":           False,
     # No land-surface model output is exposed in this stream; skip both
     # the LPJ-GUESS (AWI-ESM3) and JSBACH (AWI-ESM2) land scripts.

@@ -26,6 +26,7 @@ from scipy.stats import linregress
 # Add parent directory to path and import config
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
+from bg_routines.ipcc_cmaps import get_abs_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)
 print(SCRIPT_NAME)
@@ -34,18 +35,20 @@ update_status(SCRIPT_NAME, " Started")
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
-# Spinup experiment path (analyzing spinup as PI control equivalent)
+# AWI-ESM2 only has preprocessed echam data for the historic/pi_ctrl range
+# (5840-6004 for PI_wisofix_c); spinup years aren't preprocessed yet, so
+# plot the historic-period Gregory equivalent.
 SPINUP_PATH = os.environ.get(
-    "AWICM3_SPINUP_PATH", 
+    "AWICM3_SPINUP_PATH",
     spinup_path + "/oifs/"
 )
 
 # Configuration options
 USE_SURFACE_BUDGET = True  # Set to True to use surface energy budget instead of TOA
 
-# Years to analyze (use spinup period)
+# Years to analyze
 SPINUP_YEARS = list(range(spinup_start, spinup_end + 1))
-print(f"Analyzing spinup years: {spinup_start}-{spinup_end} ({len(SPINUP_YEARS)} years)")
+print(f"Analyzing years: {spinup_start}-{spinup_end} ({len(SPINUP_YEARS)} years)")
 print(f"Energy budget method: {'Surface' if USE_SURFACE_BUDGET else 'TOA'}")
 
 # Output file
@@ -90,7 +93,9 @@ def load_yearly_data_simple(path, var, years, pattern, freq):
     try:
         print(f"Loading {len(files)} files for {var}...")
         
-        # Load files with explicit time decoding to handle mixed calendar types
+        # Load files with explicit time decoding to handle mixed calendar types.
+        # AWI-CM3 XIOS uses `time_counter`; the AWI-ESM2 echam preprocessor
+        # uses `time`.
         ds = xr.open_mfdataset(files, combine="by_coords", parallel=False,
                              decode_times=True, use_cftime=True,
                              combine_attrs='drop_conflicts')
@@ -99,14 +104,14 @@ def load_yearly_data_simple(path, var, years, pattern, freq):
 
         # Get the variable data
         var_data = ds[var]
-        
+
         # Normalize by accumulation period ONLY for flux variables (not temperature)
         if var != '2t':  # Don't normalize temperature
             var_data = var_data / accumulation_period
-        
+
         # Calculate global area mean
         global_mean = global_area_mean(var_data)
-        
+
         # Convert to yearly means using groupby
         yearly_data = global_mean.groupby(f'{time_dim}.year').mean()
         
@@ -221,7 +226,11 @@ if USE_SURFACE_BUDGET:
     # Surface budget = SSR + STR + SSHF + SLHF - SF_heat_flux
     # All fluxes are now in W/m² after normalization by accumulation_period
     # Convert SF from kg/m²/s to W/m² using heat of fusion (same as part2)
-    sf_heat_flux = sf_global * 333550000  # Heat of fusion for ice (J/kg) - same as part2
+    # Heat of fusion of water ice = 334 kJ/kg = 334000 J/kg. The original
+    # constant (333_550_000) was off by a factor of 1000 (the "mJ/kg"
+    # label mismatched the value used), which pinned the surface budget
+    # at ~700 W/m².
+    sf_heat_flux = sf_global * 334000  # kg/m^2/s * J/kg -> W/m^2
     energy_imbalance = ssr_global + str_global + sshf_global + slhf_global - sf_heat_flux
     
     print("Surface energy budget components loaded and calculated")
@@ -365,7 +374,7 @@ ax.axhspan(-0.5, 0.5, color='green', alpha=0.2, zorder=0, label='Target energy b
 # Color points by simulation year for temporal context
 years_normalized = (np.arange(len(temp_vals)) / len(temp_vals))
 scatter = ax.scatter(temp_vals, imbalance_vals, c=years_normalized, 
-                    cmap='viridis', s=30, alpha=0.7, zorder=3)
+                    cmap=get_abs_cmap('time'), s=30, alpha=0.7, zorder=3)
 
 # Highlight outliers in red
 if n_outliers > 0:
