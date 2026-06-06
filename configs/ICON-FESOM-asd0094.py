@@ -94,7 +94,11 @@ oasis_oifs_grid_name = 'atmo'
 spinup_path    = '/work/ab0246/a270092/runtime/ICON_FESOM_asd0094/outdata/'
 spinup_name    = model_version + '_spinup'
 spinup_start   = 1958
-spinup_end     = 2107
+# End at 2092 not 2107: the ICON source dir is missing files for 2094
+# and 2095 (a gap from a SLURM rerun mid-spinup), and downstream cdo
+# loops fail when they hit those years. 2068-2092 = 25 yr last window
+# stays entirely below the gap and gives clean coverage everywhere.
+spinup_end     = 2092
 
 pi_ctrl_path   = spinup_path
 pi_ctrl_name   = model_version + '_pi-control'
