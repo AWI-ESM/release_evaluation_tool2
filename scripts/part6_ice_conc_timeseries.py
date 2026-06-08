@@ -106,9 +106,16 @@ for exp in runs:
     # overlaying pi_ctrl as a separate forced branch from the same start.
     # Without this the historic run (e.g. 1850-2019) and spinup
     # (2001-5830) end up on disjoint x-axes covering 1850-6000.
+    # And when the spinup ends well before pi_ctrl_start (e.g. AWI-ESM3-VEG-HR
+    # with spinup ending 1679 but historic / pi_ctrl starting 1850), shift the
+    # spinup forward so it lands immediately before pi_ctrl_start with no gap.
     if exp == historic_name:
         offset = pi_ctrl_start - year_start
         years = np.linspace(year_start + offset, year_end + offset,
+                            year_end - year_start + 1)
+    elif exp == spinup_name:
+        spinup_shift = max(0, pi_ctrl_start - 1 - spinup_end)
+        years = np.linspace(year_start + spinup_shift, year_end + spinup_shift,
                             year_end - year_start + 1)
     else:
         years = np.linspace(year_start, year_end, year_end - year_start + 1)
@@ -254,9 +261,16 @@ for exp in runs:
     # overlaying pi_ctrl as a separate forced branch from the same start.
     # Without this the historic run (e.g. 1850-2019) and spinup
     # (2001-5830) end up on disjoint x-axes covering 1850-6000.
+    # And when the spinup ends well before pi_ctrl_start (e.g. AWI-ESM3-VEG-HR
+    # with spinup ending 1679 but historic / pi_ctrl starting 1850), shift the
+    # spinup forward so it lands immediately before pi_ctrl_start with no gap.
     if exp == historic_name:
         offset = pi_ctrl_start - year_start
         years = np.linspace(year_start + offset, year_end + offset,
+                            year_end - year_start + 1)
+    elif exp == spinup_name:
+        spinup_shift = max(0, pi_ctrl_start - 1 - spinup_end)
+        years = np.linspace(year_start + spinup_shift, year_end + spinup_shift,
                             year_end - year_start + 1)
     else:
         years = np.linspace(year_start, year_end, year_end - year_start + 1)
