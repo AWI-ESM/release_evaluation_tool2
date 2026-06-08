@@ -136,10 +136,19 @@ reference_years= 1958
 
 observation_path = '/work/ab0246/a270092/obs/'
 
-# AWI-ESM3 XIOS emits OIFS accumulated fluxes integrated over 6h
-# intervals (J/m^2 for SW/LW, m water-equivalent for snowfall). Same
-# convention as the LR config.
-accumulation_period = 21600
+# The AWI-ESM3-VEG-HR run straddles a switch to CMIP7-style OIFS output:
+#   - Spinup_cont2 (1350-1649): 6h accumulation (J/m^2 over 6h)
+#   - Spinup_cont3 (1650-1679) + piControl + historical: 1h
+#     accumulation (CMIP7 output config)
+# `accumulation_period` is the default that all scripts using single-
+# scalar division see; the historic + piControl + last-25y windows all
+# fall in the CMIP7 era so 3600 is right. Scripts that consume the long
+# spinup timeline (part2 rad balance, part20 Gregory) consult
+# accumulation_period_pre_cmip7 / accumulation_period_cmip7_year and
+# apply the per-year split.
+accumulation_period             = 3600
+accumulation_period_pre_cmip7   = 21600
+accumulation_period_cmip7_year  = 1650
 
 tool_path      = os.getcwd()
 out_path       = tool_path+'/output/'+model_version+'/'

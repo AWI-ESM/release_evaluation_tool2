@@ -105,9 +105,18 @@ def load_yearly_data_simple(path, var, years, pattern, freq):
         # Get the variable data
         var_data = ds[var]
 
-        # Normalize by accumulation period ONLY for flux variables (not temperature)
-        if var != '2t':  # Don't normalize temperature
-            var_data = var_data / accumulation_period
+        # Normalize by accumulation period ONLY for flux variables (not temperature).
+        # For configs spanning an OIFS output-config switch (e.g. HR straddling
+        # CMIP7), divide by a per-year array; otherwise fall back to scalar.
+        if var != '2t':
+            _acc_pre  = globals().get('accumulation_period_pre_cmip7')
+            _acc_year = globals().get('accumulation_period_cmip7_year')
+            if _acc_pre is not None and _acc_year is not None:
+                _years = getattr(ds[time_dim].dt, 'year')
+                _acc = xr.where(_years < _acc_year, _acc_pre, accumulation_period)
+                var_data = var_data / _acc
+            else:
+                var_data = var_data / accumulation_period
 
         # Calculate global area mean
         global_mean = global_area_mean(var_data)
