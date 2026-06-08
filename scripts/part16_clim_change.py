@@ -488,7 +488,12 @@ for var in ['precip','temp']:
 
     lon = np.arange(0, 360, 0.5)
     lat = np.arange(-90, 90, 0.5)
-    data_sig, lon = add_cyclic_point(data_sig, coord=lon)
+    # add_cyclic_point defaults to axis=-1, but for some configs cdo
+    # emits data with shape (lon, lat) so the lon dim is axis=-2. Pick
+    # the axis whose size matches len(lon) — falls through to default
+    # if no match (and the existing ValueError surfaces the real bug).
+    _lon_axis = next((i for i, n in enumerate(data_sig.shape) if n == len(lon)), -1)
+    data_sig, lon = add_cyclic_point(data_sig, coord=lon, axis=_lon_axis)
     
     
     
@@ -516,7 +521,8 @@ for var in ['precip','temp']:
     for exp_name in [historic_name, pi_ctrl_name]:
         lon = np.arange(0, 360, 0.5)
         lat = np.arange(-90, 90, 0.5)
-        data_model_mean[exp_name], lon = add_cyclic_point(data_model_mean[exp_name], coord=lon)
+        _ax = next((i for i, n in enumerate(data_model_mean[exp_name].shape) if n == len(lon)), -1)
+        data_model_mean[exp_name], lon = add_cyclic_point(data_model_mean[exp_name], coord=lon, axis=_ax)
 
     print(np.shape(data_model_mean[exp_name]))
 

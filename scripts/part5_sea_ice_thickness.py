@@ -77,28 +77,37 @@ from utils import ensure_weight_file
 # Load model Data
 data = OrderedDict()
 
-def load_parallel(variable,path,remap_resolution,meshpath,mesh_file):
+def load_all_years(variable, exp_path, years, remap_resolution, meshpath, mesh_file):
+    """One cdo invocation per experiment instead of one per year.
+
+    The earlier dask.delayed(per-year) version paid cdo process-startup +
+    weight-file load on every iteration: 25 yr * 2 paths = 50 cdo calls
+    sequentially (synchronous scheduler), each ~2 min, ~100 min total
+    (and TIMEOUT'd at the 2 h SLURM limit). Single -cat across the
+    year list collapses that to two cdo invocations and a few minutes
+    end-to-end.
+    """
     weight_file = ensure_weight_file(remap_resolution, meshpath, mesh_file)
-    data1 = cdo.copy(input='-setmissval,nan -setctomiss,0 -remap,r'+remap_resolution+','+weight_file+' -selmon,3,9 -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
-    np.shape(data1)
-    return data1
+    file_paths = [f"{exp_path}/fesom/{variable}.fesom.{y}.nc" for y in years]
+    existing = [p for p in file_paths if os.path.exists(p)]
+    if not existing:
+        return np.array([])
+    return cdo.copy(
+        input=(
+            f"-setmissval,nan -setctomiss,0 "
+            f"-remap,r{remap_resolution},{weight_file} "
+            f"-selmon,3,9 "
+            f"-setgrid,{meshpath}/{mesh_file} "
+            f"-cat [ {' '.join(existing)} ]"
+        ),
+        returnArray=variable,
+    )
 
-for exp_path, exp_name  in zip(input_paths, input_names):
-
-    datat = []
-    t = []
-    temporary = []
-    for year in tqdm(years_per_path[exp_name]):
-        path = exp_path+'/fesom/'+variable+'.fesom.'+str(year)+'.nc'
-        temporary = dask.delayed(load_parallel)(variable,path,remap_resolution,meshpath,mesh_file)
-        t.append(temporary)
-
-    # Default dask scheduler is threads; cdo's CdoTempfileStore finalizer
-    # races with readArray under threads and randomly deletes temp files
-    # mid-read. Force synchronous for cdo-backed delayed tasks.
-    with ProgressBar():
-        datat = dask.compute(t, scheduler='synchronous')
-    data[exp_name] = np.array([np.squeeze(d) for d in datat[0]])
+for exp_path, exp_name in zip(input_paths, input_names):
+    arr = load_all_years(variable, exp_path, list(years_per_path[exp_name]),
+                          remap_resolution, meshpath, mesh_file)
+    # Returned shape is (n_years*2, lat, lon) — months 3 and 9 per year.
+    data[exp_name] = np.array([np.squeeze(d) for d in arr]) if arr.size else arr
 
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
     new_cmap = colors.LinearSegmentedColormap.from_list(
