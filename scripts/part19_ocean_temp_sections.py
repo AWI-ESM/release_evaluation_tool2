@@ -78,7 +78,7 @@ def load_and_average_temperature_data():
         chunk = existing[i:i + chunk_size]
         tasks = [dask.delayed(_cdo_timmean_one)(variable, f, meshpath, mesh_file) for f in chunk]
         with ProgressBar():
-            results = dask.compute(*tasks, scheduler='threads')
+            results = dask.compute(*tasks, scheduler='synchronous')
         
         # Check shapes
         for r in results:
@@ -129,18 +129,32 @@ def create_and_plot_transect(transect_info, temp_data, output_file):
     
     # Create the plot
     fig, ax = plt.subplots(figsize=figsize)
-    
+    # Seafloor / no-data cells should read as land, not water.
+    ax.set_facecolor('lightgray')
+
     # Prepare depth axis: mesh.zlev has nlevels+1 interfaces, data has nlevels layers
     # FESOM depths are negative (0, -5, -10, ...), convert to positive for plotting
     depths = -np.array(mesh.zlev)
     if len(depths) != transect_data.shape[1]:
          depths = depths[:transect_data.shape[1]]
-    
+
     # Plot using contourf
     # X=dist, Y=depths, Z=transect_data.T
     levels = np.arange(-2, 30, 0.5)
-    cmap = cm.RdYlBu_r
-    
+    from bg_routines.ipcc_cmaps import get_abs_cmap
+    cmap = get_abs_cmap('thetao').copy()
+    # NaN and below-range values (seafloor, missing) should match the
+    # lightgray facecolor instead of bleeding the cmap's "under" colour
+    # across the seabed (which is what made the ocean floor look yellow).
+    cmap.set_bad('lightgray')
+    cmap.set_under('lightgray')
+
+    # FESOM stores 0.0 in cells below local bathymetry (after our fill
+    # value -> NaN replacement above). Real ocean potential temperature
+    # is never *exactly* 0, so treat exact zeros as seafloor/no-data so
+    # the lightgray facecolor shows through instead of the cmap.
+    transect_data = np.where(transect_data == 0.0, np.nan, transect_data)
+
     # Fill contours
     cs = ax.contourf(dist, depths, transect_data.T, levels=levels, cmap=cmap, extend='both')
     

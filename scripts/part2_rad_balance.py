@@ -18,6 +18,7 @@ multiprocessing.set_start_method("fork", force=True)
 # Add the parent directory to sys.path and load config
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
+from bg_routines.ipcc_cmaps import IPCC_LINE
 
 SCRIPT_NAME = os.path.basename(__file__)
 print(SCRIPT_NAME)
@@ -81,12 +82,11 @@ def load_yearly_data_simple(path, var, years, pattern, freq):
         print(f"Loading {len(files)} files for {var}...")
         
         # Load files with explicit time decoding to handle mixed calendar types.
-        # AWI-ESM3 XIOS uses `time_counter`; the AWI-ESM2 echam preprocessor
-        # emits `time` instead, so chunk and groupby on whichever exists.
+        # AWI-CM3 XIOS uses `time_counter`; the AWI-ESM2 echam preprocessor
+        # uses `time`.
         ds = xr.open_mfdataset(files, combine="by_coords", parallel=False,
                              decode_times=True, use_cftime=True,
                              combine_attrs='drop_conflicts')
-
         time_dim = 'time_counter' if 'time_counter' in ds.dims else 'time'
         ds = ds.chunk({time_dim: 12})
 
@@ -132,7 +132,8 @@ def detect_file_pattern(path, var, years):
 if __name__ == "__main__":
     print("Loading radiation balance data using proper xarray approach...")
     
-    # Define years and path
+    # Radiative drift over the spinup is the diagnostic of interest;
+    # historic period is too short to show convergence behaviour.
     years = list(range(spinup_start, spinup_end + 1))
     
     # Detect file patterns and load data
@@ -231,10 +232,11 @@ if __name__ == "__main__":
     print(f"sf units = '{_sf_units}' -> sf_conv = {sf_conv:g}")
     sf_heat_flux = sf_vals * sf_conv
     print(f"SF heat flux (W/m²):     min={np.min(sf_heat_flux):>10.3f}, max={np.max(sf_heat_flux):>10.3f}, mean={np.mean(sf_heat_flux):>10.3f}")
-
+    
     surface = ssr_vals + str_vals + sshf_vals + slhf_vals - sf_heat_flux
     print(f"Surface total:           min={np.min(surface):>10.3f}, max={np.max(surface):>10.3f}, mean={np.mean(surface):>10.3f}")
-
+    
+    #multiply by heat of fusion: 333550000 mJ/kg - then we get the flux in W/m2
     tsr_vals = data['tsr']
     ttr_vals = data['ttr']
     
@@ -284,43 +286,44 @@ if __name__ == "__main__":
         print("WARNING: Radiation balance is essentially zero - this is highly suspicious for a climate model!")
 
     #Plot:
-    def smooth(x,beta):
-        """ kaiser window smoothing """
-        # Ensure window length is no longer than the timeseries
-        window_len = min(11, len(x))
-        if window_len < 3:
-            return x  # No smoothing for very short series
-        # Make window_len odd for proper centering
+    def smooth(x, window_len=None):
+        """Kaiser-window low-pass smoothing.
+
+        With a 3830-year spinup an 11-year window produced a near-raw
+        noise carpet; scale the window to ~5% of series length (with
+        odd 31..301 cap) so multidecadal drift is the dominant signal.
+        """
+        if window_len is None:
+            window_len = max(31, min(301, (len(x) // 20) | 1))
+        if len(x) < window_len or window_len < 3:
+            return np.asarray(x)
         if window_len % 2 == 0:
             window_len -= 1
-        beta=10
-        # extending the data at beginning and at the end
-        # to apply the window at the borders
-        s = np.r_[x[window_len-1:0:-1],x,x[-1:-window_len:-1]]
-        w = np.kaiser(window_len,beta)
-        y = np.convolve(w/w.sum(),s,mode='valid')
-        # Adjust trimming based on window size
-        trim = window_len//2
-        return y[trim:len(y)-trim] if len(y) > 2*trim else x
+        beta = 10
+        s = np.r_[x[window_len-1:0:-1], x, x[-1:-window_len:-1]]
+        w = np.kaiser(window_len, beta)
+        y = np.convolve(w / w.sum(), s, mode='valid')
+        trim = window_len // 2
+        return y[trim:len(y) - trim]
 
     fig, axes = plt.subplots(figsize=figsize)
     years = range(spinup_start, spinup_start + len(data['ssr']))
 
-    plt.plot(years,surface,linewidth=1,color='darkblue', label='_nolegend_')
-    plt.plot(years,toa,linewidth=1,color='orange', label='_nolegend_')
-    plt.plot(years,(toa-surface),linewidth=1,color='grey', label='_nolegend_')
+    # Plot the smoothed running mean only — annual values were too noisy
+    # to read across a multi-millennium spinup. Light raw lines kept at
+    # very low alpha to hint at variability without dominating.
+    plt.plot(years, surface, linewidth=0.4, color=IPCC_LINE['cool'], alpha=0.15, label='_nolegend_')
+    plt.plot(years, toa,     linewidth=0.4, color=IPCC_LINE['warm'], alpha=0.15, label='_nolegend_')
+    plt.plot(years, (toa - surface), linewidth=0.4, color='grey',   alpha=0.15, label='_nolegend_')
 
-    # Only plot smoothed lines if we have enough data points
-    if len(surface) >= 3:
-        surface_smooth = smooth(surface,len(surface))
-        toa_smooth = smooth(toa,len(toa))
-        balance_smooth = smooth((toa-surface),len(toa-surface))
-        
-        # Ensure smoothed arrays match the years array length
+    if len(surface) >= 31:
+        surface_smooth = smooth(surface)
+        toa_smooth     = smooth(toa)
+        balance_smooth = smooth(toa - surface)
         if len(surface_smooth) == len(years):
-            plt.plot(years,surface_smooth,color='darkblue')
-            plt.plot(years,toa_smooth,color='orange')
-            plt.plot(years,balance_smooth,color='grey')
+            plt.plot(years, surface_smooth, color=IPCC_LINE['cool'], linewidth=1.6)
+            plt.plot(years, toa_smooth,     color=IPCC_LINE['warm'], linewidth=1.6)
+            plt.plot(years, balance_smooth, color='grey',            linewidth=1.6)
 
     axes.set_title('Radiative balance',fontweight="bold")
 

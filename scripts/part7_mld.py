@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
+from bg_routines.ipcc_cmaps import get_abs_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -55,22 +56,35 @@ def plot_data(variable, hemisphere, projection, extent, filename, levels, factor
     ax = plt.axes(projection=projection)
     ax.add_feature(cfeature.COASTLINE, zorder=3)
     ax.set_extent(extent, ccrs.PlateCarree())
-    
+
     depth_index = 3  # Choosing a consistent depth level
     data_2d = factor * data_model_mean[exp_name][depth_index, :, :]
 
-    # Two coordinated fixes needed for polar contourf:
-    #  - add_cyclic_point closes the seam at lon=0/360 (otherwise a
-    #    vertical stripe streaks across the polar plot)
-    #  - transform_first=True (with 2-D meshgridded X/Y) avoids the
-    #    "Sequences of multi-polygons are not valid arguments" shapely
-    #    error cartopy raises when polygons wrap the pole.
+    # Polar plotting recipe that survives the cartopy / shapely
+    # polygon-wrap minefield:
+    #  - close the seam at lon=0/360 with add_cyclic_point so the cells
+    #    are continuous across the dateline
+    #  - drop the lat=+-90 row so the cyclic strip doesn't collapse to a
+    #    single point at the pole (that collapse is what previously
+    #    triggered "Sequences of multi-polygons are not valid arguments"
+    #    or, depending on cartopy version, the inverse TypeError
+    #    "'MultiPolygon' object is not subscriptable")
+    #  - use pcolormesh for the colour fill: it draws each cell as its
+    #    own quadrilateral and so doesn't generate the polygons that
+    #    contourf hands to shapely, which is what was failing on NH
+    #  - keep contour for the line overlay (small number of paths, no
+    #    polygon generation) so the visible level boundaries are still
+    #    there. set_extent crops to the polar cap anyway, so the trimmed
+    #    pole row is invisible.
     data_cyc, lon_cyc = add_cyclic_point(data_2d, coord=lon)
-    lon2d, lat2d = np.meshgrid(lon_cyc, lat)
-    imf = ax.contourf(lon2d, lat2d, data_cyc, cmap=new_cmap, levels=levels, extend=extend,
-                      transform=ccrs.PlateCarree(), transform_first=True, zorder=1)
-    ax.contour(lon2d, lat2d, data_cyc, levels=levels, colors='black', linewidths=0.2,
-               transform=ccrs.PlateCarree(), transform_first=True, zorder=1)
+    pole_mask = (lat > -90) & (lat < 90)
+    lat_trim = lat[pole_mask]
+    data_trim = data_cyc[pole_mask, :]
+    norm = colors.BoundaryNorm(levels, ncolors=new_cmap.N, extend=extend)
+    imf = ax.pcolormesh(lon_cyc, lat_trim, data_trim, cmap=new_cmap, norm=norm,
+                        transform=ccrs.PlateCarree(), zorder=1, shading='auto')
+    ax.contour(lon_cyc, lat_trim, data_trim, levels=levels, colors='black',
+               linewidths=0.2, transform=ccrs.PlateCarree(), zorder=1)
     
     ax.set_title(f"{variable} - {hemisphere}", fontweight="bold")
     cb = plt.colorbar(imf, orientation='horizontal', fraction=0.046, pad=0.04)
@@ -85,10 +99,17 @@ def plot_data(variable, hemisphere, projection, extent, filename, levels, factor
 # Initialization
 # -------------------------------
 
-variables = ['MLD2', 'a_ice']
+variables = ['MLD2', 'MLD3', 'a_ice']
 input_paths = [historic_path+'/fesom/']
 input_names = [historic_name]
+# All climatologies use the standard last-25y window of the historic
+# period — same windowed-mean computation across MLD and a_ice.
 years = range(historic_last25y_start, historic_last25y_end+1)
+years_per_var = {
+    'MLD2':  years,
+    'MLD3':  years,
+    'a_ice': years,
+}
 batch_size = 20  # Process files in batches
 
 
@@ -98,12 +119,19 @@ batch_size = 20  # Process files in batches
 
 data = OrderedDict()
 for variable in variables:
+    skip_this_var = False
     for exp_path, exp_name in zip(input_paths, input_names):
-        file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years]
+        file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years_per_var[variable]]
         existing = [f for f in file_paths if os.path.exists(f)]
         print(f"Processing {variable} for {exp_name}: {len(existing)} files")
+        if not existing:
+            print(f"  no {variable}.fesom.<year>.nc files in {exp_path} -- skipping {variable}")
+            skip_this_var = True
+            break
         result = load_merged(variable, existing, remap_resolution, meshpath, mesh_file)
         data[exp_name] = result[np.newaxis, ...] if result.ndim < 4 else result
+    if skip_this_var:
+        continue
 
 
     # -------------------------------
@@ -142,14 +170,17 @@ for variable in variables:
         if variable == 'a_ice':
             levels = [1,10,20,30,40,50,60,70,80,90,100]
             factor = 100
-            new_cmap = truncate_colormap(cmo.cm.ice, 0.15, 1)
+            # Use the full IPCC cryo_seq palette (no truncation) so the
+            # full sea-ice colour range is shown.
+            new_cmap = get_abs_cmap('a_ice')
             extend = 'min'
         else:
             levels = [0, 0.2, 0.5,  1,  2, 2.5,  3, 3.5, 4]
             factor = -0.001
-            new_cmap = truncate_colormap(plt.cm.PuOr, 0.5, 1)
+            new_cmap = truncate_colormap(get_abs_cmap('MLD3'), 0.0, 1)
             extend = 'both'
         
+        # Hemisphere-focused plots: use polar stereo, not EqualEarth.
         plot_data(variable, 'Southern Hemisphere', ccrs.SouthPolarStereo(), [-180, 180, -55, -90], f"{variable}_SH.png", levels, factor, new_cmap, extend)
         plot_data(variable, 'Northern Hemisphere', ccrs.NorthPolarStereo(), [-180, 180, 50, 90], f"{variable}_NH.png", levels, factor, new_cmap, extend)
 

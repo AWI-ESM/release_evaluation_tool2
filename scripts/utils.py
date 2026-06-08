@@ -6,6 +6,7 @@ Utility functions for the release evaluation tool.
 import os
 import sys
 import subprocess
+import fcntl
 from pathlib import Path
 
 # Add the parent directory to sys.path and load config

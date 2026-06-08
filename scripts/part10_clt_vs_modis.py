@@ -4,6 +4,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
 from bg_routines.metrics import md, rmsd
+from bg_routines.ipcc_cmaps import get_bias_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -22,11 +23,31 @@ exps = list(range(historic_last25y_start, historic_last25y_end+1))
 climatology_files = ['clt_MODIS_yearmean.nc']
 climatology_path =  observation_path+'/MODIS/'
 
-figsize=(6, 4.5)
+figsize=(9, 5)
 dpi = 300
 ofile = None
 res = [180, 91]
+# lcc/hcc (low/high cloud cover) are not in echam's _echam stream;
+# only total cloud cover (aclcov -> tcc) is preprocessed for AWI-ESM2.
 variable = ['tcc', 'lcc', 'hcc']
+# Drop cloud-cover variables whose preprocessed files don't exist for the
+# historic year window (e.g. ICON atm_2d_ml only emits total cloud cover
+# as 'tcc'). This keeps the script a no-op filter for AWI-ESM2/3 / AWI-CM3
+# (which preprocess all three) while letting tcc-only runs degrade
+# gracefully.
+import glob
+_oifs_dir = historic_path + '/oifs/'
+variable = [
+    v for v in variable
+    if any(
+        os.path.exists(f"{_oifs_dir}atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc")
+        for exp in exps
+    )
+]
+if not variable:
+    update_status(SCRIPT_NAME, ' Skipped (no cloud vars in this preproc)')
+    sys.exit(0)
+print(f"  available cloud variables for this run: {variable}")
 variable_clim = 'clt'
 title='Cloud area fraction vs. MODIS'
 mapticks = [-50,-30,-20,-10,-6,-2,2,6,10,20,30,50]
@@ -72,7 +93,7 @@ for exp_path, exp_name in zip(input_paths, input_names):
                 path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
                 t.append(dask.delayed(load_parallel)(v, path))
             with ProgressBar():
-                datat_chunk = dask.compute(*t, scheduler='threads')
+                datat_chunk = dask.compute(*t, scheduler='synchronous')
             datat.extend(datat_chunk)
         data[exp_name][v] = np.array([np.squeeze(d) for d in datat])
 
@@ -104,8 +125,9 @@ mdval = md(crf_sw_model_mean[exp_name], crf_sw_satobs_mean, wgts)
 
 # Define figure layout
 nrows, ncol = define_rowscol(input_paths)
-fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize, subplot_kw={'projection': ccrs.PlateCarree()}, dpi=dpi)
+fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize, subplot_kw={'projection': ccrs.EqualEarth()}, dpi=dpi)
 
+fig.subplots_adjust(bottom=0.18, top=0.95, left=0.05, right=0.95)
 if isinstance(axes, np.ndarray):
     axes = axes.flatten()
 else:
@@ -114,11 +136,12 @@ else:
 # Loop through input names and plot
 for i, exp_name in enumerate(input_names):
     ax = axes[i]
+    ax.set_global()
     ax.add_feature(cfeature.COASTLINE, zorder=3)
 
     # Contour plot
     imf = ax.contourf(lon_cyclic, lat, crf_sw_model_mean[exp_name] - crf_sw_satobs_mean,
-                      cmap='PuOr_r', levels=mapticks, extend='both',
+                      cmap=get_bias_cmap('clt'), levels=mapticks, extend='both',
                       transform=ccrs.PlateCarree(), zorder=1)
 
     line_colors = ['black' for _ in imf.levels]
@@ -133,20 +156,20 @@ for i, exp_name in enumerate(input_names):
 
     # Gridlines
     gl = ax.gridlines(draw_labels=True, linewidth=1, color='gray', alpha=0.2, linestyle='-')
-    gl.xlabels_bottom = False
+    gl.bottom_labels = False
 
     # Bias & RMSD Text
     textrsmd = f'rmsd={round(rmsdval, 3)}'
     textbias = f'bias={round(mdval, 3)}'
     props = dict(boxstyle='round,pad=0.1', facecolor='white', alpha=0.5)
 
-    ax.text(0.02, 0.4, textrsmd, transform=ax.transAxes, fontsize=13,
+    ax.text(0.12, 0.22, textrsmd, transform=ax.transAxes, fontsize=13,
             verticalalignment='top', bbox=props, zorder=4)
-    ax.text(0.02, 0.3, textbias, transform=ax.transAxes, fontsize=13,
+    ax.text(0.12, 0.15, textbias, transform=ax.transAxes, fontsize=13,
             verticalalignment='top', bbox=props, zorder=4)
 
 # Colorbar
-cbar_ax_abs = fig.add_axes([0.15, 0.11, 0.7, 0.05])
+cbar_ax_abs = fig.add_axes([0.15, 0.06, 0.7, 0.04])
 cbar_ax_abs.tick_params(labelsize=12)
 cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal', ticks=mapticks)
 cb.set_label(label="%", size=14)

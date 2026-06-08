@@ -4,6 +4,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
 from bg_routines.metrics import md, rmsd_weighted
+from bg_routines.ipcc_cmaps import get_bias_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -33,7 +34,7 @@ rowscol=[1,1]
 bbox = [-180, 180, -80, 90]
 res = [360, 180]
 mapproj='pc'
-figsize=(6, 4.5)
+figsize=(9, 5)
 
 levels = [-5, 5, 21]
 units = r'PSU'
@@ -474,7 +475,10 @@ def mask_ne(lonreg2, latreg2):
     m2: bool, np.array
         2D mask with True where the ocean is.
     """
-    nearth = cfeature.NaturalEarthFeature("physical", "ocean", "50m")
+    # Use 110m resolution rather than 50m: CORE2 mesh is coarse, so high-
+    # res small islands that Natural Earth knows about don't exist in
+    # FESOM and end up as scattered dark dots in the bias plots.
+    nearth = cfeature.NaturalEarthFeature("physical", "ocean", "110m")
     # Union all ocean geometries (not just [0]) to include Antarctica and all ocean basins
     from shapely.ops import unary_union
     all_ocean_geoms = list(nearth.geometries())
@@ -532,7 +536,7 @@ def create_proj_figure(mapproj, rowscol, figsize):
         fig, ax = plt.subplots(
             rowscol[0],
             rowscol[1],
-            subplot_kw=dict(projection=ccrs.Mercator()),
+            subplot_kw=dict(projection=ccrs.EqualEarth()),
             constrained_layout=True,
             figsize=figsize,
         )
@@ -540,7 +544,7 @@ def create_proj_figure(mapproj, rowscol, figsize):
         fig, ax = plt.subplots(
             rowscol[0],
             rowscol[1],
-            subplot_kw=dict(projection=ccrs.PlateCarree()),
+            subplot_kw=dict(projection=ccrs.EqualEarth()),
             constrained_layout=True,
             figsize=figsize,
         )
@@ -548,7 +552,7 @@ def create_proj_figure(mapproj, rowscol, figsize):
         fig, ax = plt.subplots(
             rowscol[0],
             rowscol[1],
-            subplot_kw=dict(projection=ccrs.NorthPolarStereo()),
+            subplot_kw=dict(projection=ccrs.EqualEarth()),
             constrained_layout=True,
             figsize=figsize,
         )
@@ -556,7 +560,7 @@ def create_proj_figure(mapproj, rowscol, figsize):
         fig, ax = plt.subplots(
             rowscol[0],
             rowscol[1],
-            subplot_kw=dict(projection=ccrs.SouthPolarStereo()),
+            subplot_kw=dict(projection=ccrs.EqualEarth()),
             constrained_layout=True,
             figsize=figsize,
         )
@@ -564,7 +568,7 @@ def create_proj_figure(mapproj, rowscol, figsize):
         fig, ax = plt.subplots(
             rowscol[0],
             rowscol[1],
-            subplot_kw=dict(projection=ccrs.Robinson()),
+            subplot_kw=dict(projection=ccrs.EqualEarth()),
             constrained_layout=True,
             figsize=figsize,
         )
@@ -623,7 +627,7 @@ def plot(
     levels=None,
     ptype="cf",
     units=None,
-    figsize=(6, 4.5),
+    figsize=(9, 5),
     rowscol=(1, 1),
     titles=None,
     distances_path=None,
@@ -749,6 +753,8 @@ def plot(
         interpolated[i] = np.ma.masked_equal(interpolated[i], 0)
 
     fig, ax = create_proj_figure(mapproj, rowscol, figsize)
+    # Leave room at the bottom for the horizontal colorbar at y=0.06.
+    fig.subplots_adjust(bottom=0.18, top=0.95, left=0.05, right=0.95)
 
     if isinstance(ax, np.ndarray):
         ax = ax.flatten()
@@ -756,7 +762,10 @@ def plot(
         ax = [ax]
 
     for ind, data_int in enumerate(interpolated):
-        ax[ind].set_extent([left, right, down, up], crs=ccrs.PlateCarree())
+        # EqualEarth (and similar global projections) crops badly when
+        # constrained by a rectangular set_extent in PlateCarree; use
+        # set_global for the (essentially global) bbox here.
+        ax[ind].set_global()
 
         data_levels = get_plot_levels(levels, data_int, lev_to_data=False)
 
@@ -841,17 +850,18 @@ def plot(
     gl = ax[ind].gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
                   linewidth=1, color='gray', alpha=0.2, linestyle='-')
 
-    gl.xlabels_bottom = False
+    gl.bottom_labels = False
         
-    textrsmd='rmsd='+str(round(rmsdval,3))
-    textbias='bias='+str(round(mdval,3))
+    # Match part18 (precip_vs_GPCP) layout: two boxes upper-left.
+    textrsmd = f'rmsd={round(rmsdval, 3)}'
+    textbias = f'bias={round(mdval, 3)}'
     props = dict(boxstyle='round,pad=0.1', facecolor='white', alpha=0.5)
-    ax[ind].text(0.02, 0.4, textrsmd, transform=ax[ind].transAxes, fontsize=13,
-        verticalalignment='top', bbox=props, zorder=15)
-    ax[ind].text(0.02, 0.3, textbias, transform=ax[ind].transAxes, fontsize=13,
-        verticalalignment='top', bbox=props, zorder=15)
+    ax[ind].text(0.12, 0.22, textrsmd, transform=ax[ind].transAxes, fontsize=13,
+                 verticalalignment='top', bbox=props, zorder=15)
+    ax[ind].text(0.12, 0.15, textbias, transform=ax[ind].transAxes, fontsize=13,
+                 verticalalignment='top', bbox=props, zorder=15)
 
-    cbar_ax_abs = fig.add_axes([0.15, 0.10, 0.7, 0.05])
+    cbar_ax_abs = fig.add_axes([0.15, 0.06, 0.7, 0.04])
     cbar_ax_abs.tick_params(labelsize=12)
     cb = fig.colorbar(image, cax=cbar_ax_abs, orientation='horizontal',ticks=levels)
     cb.set_label(label=units, size='14')
@@ -1105,7 +1115,7 @@ for depth in depths:
 
     levels = [-5.0,-3.0,-2.0,-1.0,-.6,-.2,.2,.6,1.0,2.0,3.0,5.0]
 
-    figsize=(6, 4.5)
+    figsize=(9, 5)
     dpi=300
 
     plot_data, plot_names = data_to_plot(plotds, depth)
@@ -1127,7 +1137,7 @@ for depth in depths:
             plot_data,
             rowscol=rowscol,
             mapproj=mapproj,
-            cmap='PuOr_r', 
+            cmap=get_bias_cmap('so'),
             levels=levels,
             figsize = figsize, 
             box=bbox, 

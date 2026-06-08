@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
+from bg_routines.ipcc_cmaps import get_abs_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -26,9 +27,15 @@ input_names = [historic_name, pi_ctrl_name]
 # range shared across paths. With separate historic / pi_ctrl runs (e.g.
 # hist_1x1 1850-2019 vs. PI_wisofix_c last 170y), the historic_last25y
 # range only exists in the historic workspace.
+# Window length is configurable so short smoke-test configs (e.g.
+# the ICON-FESOM 3-year run) can use the entire run without trying to
+# read years before the start. Default is the original 25-year window;
+# real historic configs (170 y or longer) should keep this default so
+# we sample only the modern climate, not a mid-transient period.
+_clim_window = globals().get('clim_window_years', 25)
 years_per_path = {
-    historic_name: range(historic_end - 24, historic_end + 1),
-    pi_ctrl_name:  range(pi_ctrl_end  - 24, pi_ctrl_end  + 1),
+    historic_name: range(historic_end - (_clim_window - 1), historic_end + 1),
+    pi_ctrl_name:  range(pi_ctrl_end  - (_clim_window - 1), pi_ctrl_end  + 1),
 }
 # Kept for backward compat with downstream code referencing `years`.
 years = years_per_path[historic_name]
@@ -70,28 +77,37 @@ from utils import ensure_weight_file
 # Load model Data
 data = OrderedDict()
 
-def load_parallel(variable,path,remap_resolution,meshpath,mesh_file):
+def load_all_years(variable, exp_path, years, remap_resolution, meshpath, mesh_file):
+    """One cdo invocation per experiment instead of one per year.
+
+    The earlier dask.delayed(per-year) version paid cdo process-startup +
+    weight-file load on every iteration: 25 yr * 2 paths = 50 cdo calls
+    sequentially (synchronous scheduler), each ~2 min, ~100 min total
+    (and TIMEOUT'd at the 2 h SLURM limit). Single -cat across the
+    year list collapses that to two cdo invocations and a few minutes
+    end-to-end.
+    """
     weight_file = ensure_weight_file(remap_resolution, meshpath, mesh_file)
-    data1 = cdo.copy(input='-setmissval,nan -setctomiss,0 -remap,r'+remap_resolution+','+weight_file+' -selmon,3,9 -setgrid,'+meshpath+'/'+mesh_file+' '+str(path),returnArray=variable)
-    np.shape(data1)
-    return data1
+    file_paths = [f"{exp_path}/fesom/{variable}.fesom.{y}.nc" for y in years]
+    existing = [p for p in file_paths if os.path.exists(p)]
+    if not existing:
+        return np.array([])
+    return cdo.copy(
+        input=(
+            f"-setmissval,nan -setctomiss,0 "
+            f"-remap,r{remap_resolution},{weight_file} "
+            f"-selmon,3,9 "
+            f"-setgrid,{meshpath}/{mesh_file} "
+            f"-cat [ {' '.join(existing)} ]"
+        ),
+        returnArray=variable,
+    )
 
-for exp_path, exp_name  in zip(input_paths, input_names):
-
-    datat = []
-    t = []
-    temporary = []
-    for year in tqdm(years_per_path[exp_name]):
-        path = exp_path+'/fesom/'+variable+'.fesom.'+str(year)+'.nc'
-        temporary = dask.delayed(load_parallel)(variable,path,remap_resolution,meshpath,mesh_file)
-        t.append(temporary)
-
-    with ProgressBar():
-        # Default dask scheduler is threads; cdo's CdoTempfileStore finalizer
-        # races with readArray under threads and randomly deletes temp files
-        # mid-read. Force synchronous for cdo-backed delayed tasks.
-        datat = dask.compute(t, scheduler='synchronous')
-    data[exp_name] = np.array([np.squeeze(d) for d in datat[0]])
+for exp_path, exp_name in zip(input_paths, input_names):
+    arr = load_all_years(variable, exp_path, list(years_per_path[exp_name]),
+                          remap_resolution, meshpath, mesh_file)
+    # Returned shape is (n_years*2, lat, lon) — months 3 and 9 per year.
+    data[exp_name] = np.array([np.squeeze(d) for d in arr]) if arr.size else arr
 
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
     new_cmap = colors.LinearSegmentedColormap.from_list(
@@ -119,7 +135,7 @@ nrows, ncol = define_rowscol(input_paths)
 
 figsize=(6,6)
 
-new_cmap = truncate_colormap(cmo.cm.ice, 0.15, 1)
+new_cmap = truncate_colormap(get_abs_cmap('m_ice'), 0.15, 1)
 
 for seas in ['September','March']:
     if seas == 'March':
@@ -133,8 +149,11 @@ for seas in ['September','March']:
 
             fig =plt.figure(figsize=(6,6))
 
+            # Hemisphere plots use polar-stereo, not EqualEarth — the
+            # latter collapses a polar latitude band into a horizontal
+            # strip.
             if hemi == 'SH':
-                levels=[0.1,0.2,0.4,0.6,0.8,1,1.2,1.4,1.6,1.8,2]   
+                levels=[0.1,0.2,0.4,0.6,0.8,1,1.2,1.4,1.6,1.8,2]
                 ax=plt.axes(projection=ccrs.SouthPolarStereo())
                 ax.set_extent([-180,180,-55,-90], ccrs.PlateCarree())
 
@@ -180,7 +199,7 @@ import cmocean as cmo
 
 #levels = np.linspace(0,100,11).astype(int)
 #factor=100
-new_cmap = truncate_colormap(cmo.cm.ice, 0.15, 1)
+new_cmap = truncate_colormap(get_abs_cmap('m_ice'), 0.15, 1)
 extend='both'
 
 # Load model data
@@ -237,8 +256,11 @@ for seas in ['September','March']:
 
             fig =plt.figure(figsize=(6,6))
 
+            # Hemisphere plots use polar-stereo, not EqualEarth — the
+            # latter collapses a polar latitude band into a horizontal
+            # strip.
             if hemi == 'SH':
-                levels=[0.1,0.2,0.4,0.6,0.8,1,1.2,1.4,1.6,1.8,2]   
+                levels=[0.1,0.2,0.4,0.6,0.8,1,1.2,1.4,1.6,1.8,2]
                 ax=plt.axes(projection=ccrs.SouthPolarStereo())
                 ax.set_extent([-180,180,-55,-90], ccrs.PlateCarree())
 

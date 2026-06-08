@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
+from bg_routines.ipcc_cmaps import get_bias_cmap, IPCC_LINE
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -96,7 +97,7 @@ for i in range(0, len(existing), chunk_size):
     chunk = existing[i:i + chunk_size]
     tasks = [dask.delayed(_cdo_remap_one)(variable, f, meshpath, mesh_file) for f in chunk]
     with ProgressBar():
-        results = dask.compute(*tasks, scheduler='threads')
+        results = dask.compute(*tasks, scheduler='synchronous')
     annual_chunks.extend(results)
     print(f"  Batch {i//chunk_size + 1}/{math.ceil(len(existing)/chunk_size)} done")
 
@@ -184,13 +185,7 @@ title='EOF1 as correlation between PC1 time series and the input data'
 print("Creating figure...")
 fig = plt.figure(figsize=(9, 5.56))
 
-# Debug: Checking colormap
-print("Checking colormap...")
-try:
-    colormap = plt.colormaps.get_cmap('PuOr_r')  # Updated for modern Matplotlib
-except AttributeError:
-    colormap = plt.cm.PuOr_r  # Fallback for older versions
-print(f"Colormap Loaded: {colormap}")
+colormap = get_bias_cmap('sst')
 
 # Debug: Ensure proper data types
 print(f"Shape of eof1_corr: {eof1_corr.shape}, Type: {type(eof1_corr)}")
@@ -205,6 +200,9 @@ print(f"Latitude range: {lat2.min()} to {lat2.max()}")
 
 # Create projection
 print("Creating GeoAxes with PlateCarree projection...")
+# ENSO EOF is a regional tropical-Pacific plot (lon 110-290, lat ±46);
+# EqualEarth would crop it to a sliver, so use a Pacific-centred
+# PlateCarree projection that fits the bounding box.
 ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=190))
 
 # Contour levels
@@ -257,7 +255,7 @@ plt.text(lon_max-189, lat_min-2, f"{lon_max}/{lat_min}°")
 print("Adding gridlines...")
 gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
                   linewidth=1, color='gray', alpha=0.2, linestyle='-')
-gl.xlabels_bottom = False
+gl.bottom_labels = False
 
 # Colorbar setup
 print("Creating colorbar...")
@@ -409,11 +407,11 @@ plt.axhline(y=-1, color='grey', linestyle='--')
 
 months = np.arange(len(sst_nino_ano.flatten()))
 
-plt.fill_between(months, sst_nino_ano_smooth, 0, where = (sst_nino_ano_smooth > 0), color='Orange',alpha=0.25)
-plt.fill_between(months, sst_nino_ano_smooth, -0, where = (sst_nino_ano_smooth < -0), color='darkblue',alpha=0.25)
+plt.fill_between(months, sst_nino_ano_smooth, 0, where = (sst_nino_ano_smooth > 0), color=IPCC_LINE['warm'],alpha=0.25)
+plt.fill_between(months, sst_nino_ano_smooth, -0, where = (sst_nino_ano_smooth < -0), color=IPCC_LINE['cool'],alpha=0.25)
 
-plt.fill_between(months, sst_nino_ano_smooth, 1, where = (sst_nino_ano_smooth > 1), color='Orange')
-plt.fill_between(months, sst_nino_ano_smooth, -1, where = (sst_nino_ano_smooth < -1), color='darkblue')
+plt.fill_between(months, sst_nino_ano_smooth, 1, where = (sst_nino_ano_smooth > 1), color=IPCC_LINE['warm'])
+plt.fill_between(months, sst_nino_ano_smooth, -1, where = (sst_nino_ano_smooth < -1), color=IPCC_LINE['cool'])
 
 
 if ofile is not None:
@@ -438,10 +436,10 @@ plt.axhline(y=-1, color='grey', linestyle='--')
 
 months = np.arange(len(obs_nino_ano.flatten()))
 
-plt.fill_between(months, obs_nino_ano_smooth, 0, where = (obs_nino_ano_smooth > 0), color='Orange',alpha=0.25)
-plt.fill_between(months, obs_nino_ano_smooth, -0, where = (obs_nino_ano_smooth < -0), color='darkblue',alpha=0.25)
-plt.fill_between(months, obs_nino_ano_smooth, 1, where = (obs_nino_ano_smooth > 1), color='Orange')
-plt.fill_between(months, obs_nino_ano_smooth, -1, where = (obs_nino_ano_smooth < -1), color='darkblue')
+plt.fill_between(months, obs_nino_ano_smooth, 0, where = (obs_nino_ano_smooth > 0), color=IPCC_LINE['warm'],alpha=0.25)
+plt.fill_between(months, obs_nino_ano_smooth, -0, where = (obs_nino_ano_smooth < -0), color=IPCC_LINE['cool'],alpha=0.25)
+plt.fill_between(months, obs_nino_ano_smooth, 1, where = (obs_nino_ano_smooth > 1), color=IPCC_LINE['warm'])
+plt.fill_between(months, obs_nino_ano_smooth, -1, where = (obs_nino_ano_smooth < -1), color=IPCC_LINE['cool'])
 
 
 if ofile is not None:
@@ -454,11 +452,7 @@ if ofile is not None:
 Ntotal = len(sst_nino_ano_smooth)
 data = sst_nino_ano_smooth
 
-# This is  the colormap I'd like to use.
-try:
-    cm = plt.colormaps['PuOr_r']
-except AttributeError:
-    cm = plt.cm.get_cmap('PuOr_r')
+cm = get_bias_cmap('sst')
 
 # Get the histogramp
 nbins = 13
@@ -492,11 +486,7 @@ if ofile is not None:
 Ntotal = len(obs_nino_ano_smooth)
 data = obs_nino_ano_smooth
 
-# This is  the colormap I'd like to use.
-try:
-    cm = plt.colormaps['PuOr_r']
-except AttributeError:
-    cm = plt.cm.get_cmap('PuOr_r')
+cm = get_bias_cmap('sst')
 
 # Get the histogramp
 nbins = 13
@@ -545,10 +535,10 @@ f_obs, Pxx_den_obs = signal.periodogram(obs_nino_ano.flatten(),nfft=8000)
 
 fig, ax = plt.subplots(figsize=figsize)
 
-#ax.plot(f_obsn,Pxx_den_obsn/np.mean(Pxx_den_obsn),linewidth=1,color='orange',label='HadISST')
+#ax.plot(f_obsn,Pxx_den_obsn/np.mean(Pxx_den_obsn),linewidth=1,color=IPCC_LINE['warm'],label='HadISST')
 
-ax.semilogx(f_obs,smooth(Pxx_den_obs/np.mean(Pxx_den_obs),len(Pxx_den)),linewidth=2,color='darkblue',label='HadISST')
-ax.semilogx(f,smooth(Pxx_den/np.mean(Pxx_den),len(Pxx_den)),linewidth=2,color='orange',label='AWI-CM3 HIST')
+ax.semilogx(f_obs,smooth(Pxx_den_obs/np.mean(Pxx_den_obs),len(Pxx_den)),linewidth=2,color=IPCC_LINE['cool'],label='HadISST')
+ax.semilogx(f,smooth(Pxx_den/np.mean(Pxx_den),len(Pxx_den)),linewidth=2,color=IPCC_LINE['warm'],label=f'{model_version} HIST')
 
 
 ax.set_xlim([0.0015, 0.1])

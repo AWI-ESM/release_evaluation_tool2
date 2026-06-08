@@ -4,6 +4,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
 from bg_routines.metrics import md
+from bg_routines.ipcc_cmaps import get_bias_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -21,7 +22,7 @@ exps = list(range(historic_last25y_start, historic_last25y_end+1))
 climatology_files = ['CERES_EBAF_Ed4.1_Subset_CLIM01-CLIM12.nc']
 climatology_path =  observation_path+'/CERES/'
 res = [360, 180]
-figsize=(6, 4.5)
+figsize=(9, 5)
 
 def define_rowscol(input_paths, columns=len(input_paths), reduce=0):
     number_paths = len(input_paths) - reduce
@@ -35,7 +36,13 @@ def define_rowscol(input_paths, columns=len(input_paths), reduce=0):
 
 
 
-for variable in ['str', 'ssr', 'ssrd']:
+# ssrd (downward-only surface SW) isn't preprocessed for AWI-ESM2 — echam
+# only emits the net signal `srads`; reconstructing ssrd needs the
+# per-surface-type fluxes weighted by cover fractions. Skip for now.
+_avail = [v for v in ['str', 'ssr', 'ssrd']
+          if os.path.exists(f"{historic_path}/oifs/atm_remapped_1m_{v}_1m_{exps[0]:04d}-{exps[0]:04d}.nc")]
+print(f"  available variables for this run: {_avail}")
+for variable in _avail:
     if variable == 'str':
         variable_clim = 'sfc_net_lw_all_clim'
         title = 'Surface net long-wave radiation vs. CERES-EBAF'
@@ -104,7 +111,7 @@ for variable in ['str', 'ssr', 'ssrd']:
     # Define figure layout with PlateCarree projection
     nrows, ncol = define_rowscol(input_paths)
     fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize, 
-                             subplot_kw={'projection': ccrs.PlateCarree()}, dpi=dpi)
+                             subplot_kw={'projection': ccrs.EqualEarth()}, dpi=dpi)
 
     if isinstance(axes, np.ndarray):
         axes = axes.flatten()
@@ -115,11 +122,13 @@ for variable in ['str', 'ssr', 'ssrd']:
     for i, exp_name in enumerate(input_names):
         ax = axes[i]  # Use existing axis object
 
+        ax.set_global()
+
         ax.add_feature(cfeature.COASTLINE, zorder=3)
 
         # Contour plot
         imf = ax.contourf(lon_cyclic, lat, crf_sw_model_mean[exp_name] - crf_sw_satobs_mean, 
-                          cmap='PuOr_r', levels=mapticks, extend='both',
+                          cmap=get_bias_cmap(variable), levels=mapticks, extend='both',
                           transform=ccrs.PlateCarree(), zorder=1)
 
         line_colors = ['black' for _ in imf.levels]
@@ -134,20 +143,20 @@ for variable in ['str', 'ssr', 'ssrd']:
 
         # Gridlines
         gl = ax.gridlines(draw_labels=True, linewidth=1, color='gray', alpha=0.2, linestyle='-')
-        gl.xlabels_bottom = False
+        gl.bottom_labels = False
 
         # Bias & RMSD Text
         textrsmd = f'rmsd={round(rmsdval, 3)}'
         textbias = f'bias={round(mdval, 3)}'
         props = dict(boxstyle='round,pad=0.1', facecolor='white', alpha=0.5)
 
-        ax.text(0.02, 0.35, textrsmd, transform=ax.transAxes, fontsize=13,
+        ax.text(0.12, 0.22, textrsmd, transform=ax.transAxes, fontsize=13,
                 verticalalignment='top', bbox=props, zorder=4)
-        ax.text(0.02, 0.25, textbias, transform=ax.transAxes, fontsize=13,
+        ax.text(0.12, 0.15, textbias, transform=ax.transAxes, fontsize=13,
                 verticalalignment='top', bbox=props, zorder=4)
 
     # Colorbar
-    cbar_ax_abs = fig.add_axes([0.15, 0.11, 0.7, 0.05])
+    cbar_ax_abs = fig.add_axes([0.15, 0.06, 0.7, 0.04])
     cbar_ax_abs.tick_params(labelsize=12)
     cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal', ticks=mapticks)
     cb.set_label(label="W/m²", size=14)

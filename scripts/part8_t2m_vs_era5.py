@@ -4,6 +4,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
 from bg_routines.metrics import md
+from bg_routines.ipcc_cmaps import get_bias_cmap
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -37,7 +38,7 @@ exps=[]
 for year in range(historic_last25y_start, historic_last25y_end + 1):
     exps.append(year)
         
-figsize=(6, 4.5)
+figsize=(9, 5)
 ofile = None
 res = [360, 180]
 var = ['2t']
@@ -89,7 +90,7 @@ for exp_path, exp_name in zip(input_paths, input_names):
                 chunk_t.append(temporary)
 
             with ProgressBar():
-                datat_chunk = dask.compute(*chunk_t, scheduler='threads')
+                datat_chunk = dask.compute(*chunk_t, scheduler='synchronous')
             
             datat.extend(datat_chunk)
 
@@ -136,7 +137,7 @@ import cartopy.feature as cfeature
 # Define figure layout
 nrows, ncol = define_rowscol(input_paths)
 fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize,
-                         subplot_kw={'projection': ccrs.PlateCarree()})  # Use PlateCarree globally
+                         subplot_kw={'projection': ccrs.EqualEarth()})  # Use PlateCarree globally
 
 if isinstance(axes, np.ndarray):
     axes = axes.flatten()
@@ -148,11 +149,12 @@ for i, exp_name in enumerate(input_names):
     print(exp_name)
     
     ax = axes[i]
+    ax.set_global()
     ax.add_feature(cfeature.COASTLINE, zorder=3)
 
     # Contour plot
     imf = ax.contourf(lon, lat, data_model_mean[exp_name] - data_reanalysis_mean, 
-                       cmap=plt.cm.PuOr_r, levels=levels, extend='both',
+                       cmap=get_bias_cmap('2t'), levels=levels, extend='both',
                        transform=ccrs.PlateCarree(), zorder=1)
     
     line_colors = ['black' for _ in imf.levels]
@@ -166,20 +168,20 @@ for i, exp_name in enumerate(input_names):
 
     # Gridlines
     gl = ax.gridlines(draw_labels=True, linewidth=1, color='gray', alpha=0.2, linestyle='-')
-    gl.xlabels_bottom = False
+    gl.bottom_labels = False
 
     # Bias & RMSD Text
     textrsmd = f'rmsd={round(rmsdval, 3)}'
     textbias = f'bias={round(mdval, 3)}'
     props = dict(boxstyle='round,pad=0.1', facecolor='white', alpha=0.5)
 
-    ax.text(0.02, 0.4, textrsmd, transform=ax.transAxes, fontsize=13,
+    ax.text(0.12, 0.22, textrsmd, transform=ax.transAxes, fontsize=13,
             verticalalignment='top', bbox=props, zorder=4)
-    ax.text(0.02, 0.3, textbias, transform=ax.transAxes, fontsize=13,
+    ax.text(0.12, 0.15, textbias, transform=ax.transAxes, fontsize=13,
             verticalalignment='top', bbox=props, zorder=4)
 
 # Colorbar
-cbar_ax_abs = fig.add_axes([0.15, 0.11, 0.7, 0.05])
+cbar_ax_abs = fig.add_axes([0.15, 0.06, 0.7, 0.04])
 cbar_ax_abs.tick_params(labelsize=12)
 cb = fig.colorbar(imf, cax=cbar_ax_abs, orientation='horizontal', ticks=levels)
 cb.set_label(label="°C", size=14)
