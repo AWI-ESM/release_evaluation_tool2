@@ -149,6 +149,12 @@ observation_path = '/work/ab0246/a270092/obs/'
 accumulation_period             = 3600
 accumulation_period_pre_cmip7   = 21600
 accumulation_period_cmip7_year  = 1650
+# AWI-ESM3 XIOS emits precip (lsp, cp) in m of water-equivalent depth
+# (units string = 'm') accumulated over `accumulation_period`. Dividing
+# by accumulation_period yields m/s; * 1000 (m -> mm) * 86400 (s/day)
+# gives mm/day. AWI-ESM2 and ICON-FESOM configs override this to 86400
+# because their precip is already in kg/m^2/s (1 kg/m^2 = 1 mm of water).
+precip_to_mm_per_day            = 86400000.0
 
 tool_path      = os.getcwd()
 out_path       = tool_path+'/output/'+model_version+'/'
