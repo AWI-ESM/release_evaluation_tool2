@@ -533,7 +533,6 @@ for var in ['precip','temp']:
 
     nrows, ncol = 1, 1
     fig, axes = plt.subplots(nrows=nrows, ncols=ncol, figsize=figsize, subplot_kw={'projection': ccrs.EqualEarth()})
-    fig.subplots_adjust(bottom=0.18, top=0.95, left=0.05, right=0.95)
     if isinstance(axes, np.ndarray):
         axes = axes.flatten()
     else:

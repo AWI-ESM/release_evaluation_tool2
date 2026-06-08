@@ -101,7 +101,6 @@ gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
               linewidth=1, color='gray', alpha=0.2, linestyle='-')
 gl.bottom_labels = False
 
-fig.subplots_adjust(bottom=0.18, top=0.95, left=0.05, right=0.95)
 cbar_ax_abs = fig.add_axes([0.15, 0.06, 0.7, 0.04])
 cbar_ax_abs.tick_params(labelsize=12)
 
