@@ -95,8 +95,6 @@ ax.set_ylabel('K')
 ax.set_title(mesh_name+" mesh resolution",fontweight="bold")
 ax.add_feature(cfeature.NaturalEarthFeature('physical', 'land', '110m', edgecolor='face', facecolor='lightgrey'))
 
-plt.tight_layout() 
-
 gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
               linewidth=1, color='gray', alpha=0.2, linestyle='-')
 gl.bottom_labels = False
