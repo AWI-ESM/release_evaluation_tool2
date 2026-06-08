@@ -85,7 +85,7 @@ from bg_routines.colormap_c2c    import *
 # historical) with the reval-expected file names. See that script for
 # the year-by-year provenance.
 model_version  = 'AWI-ESM3-VEG-HR'
-oasis_oifs_grid_name = 'A199'
+oasis_oifs_grid_name = 'A320'
 
 # Spinup: Spinup_cont2 (1350-1649, awiesm3-v3.4.1) merged with
 # Spinup_cont3 (1650-1679, awiesm3-v3.4.2). 330 yr total.
@@ -121,16 +121,16 @@ historic_last25y_start = historic_end - (clim_window_years - 1)
 historic_last25y_end   = historic_end
 status_csv             = "log/status.csv"
 
-# HR FESOM2 mesh (~3.15M nod2). dist_2304 partitioning matches the run.
-mesh_name      = 'HR'
-grid_name      = 'TCO199'
-meshpath       = '/work/ab0246/a270092/input/fesom2/HR/'
+# HR FESOM2 mesh: DARS2 (3,146,761 nod2). The /work/.../HR/ dir holds an
+# older 1.3M-node mesh that doesn't match this run's output (file nod2
+# = 3,146,761), so point at dars2 which does.
+mesh_name      = 'DARS2'
+grid_name      = 'TCo319'
+meshpath       = '/work/ab0246/a270092/input/fesom2/dars2/'
 mesh_file      = 'mesh.nc'
 griddes_file   = 'mesh.nc'
 abg            = [0, 0, 0]
-# CORE3 climatology dir is the closest reference set we have prebaked at
-# 512x256. Swap to an HR-specific one if/when it exists.
-reference_path = '/work/ab0246/a270092/postprocessing/climatologies/CORE3/'
+reference_path = '/work/ab0246/a270092/postprocessing/climatologies/DARS2/'
 reference_name = 'clim'
 reference_years= 1958
 
