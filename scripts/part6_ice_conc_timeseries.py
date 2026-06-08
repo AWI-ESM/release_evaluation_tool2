@@ -158,7 +158,12 @@ ax1.set_xlabel('Year', fontsize=17)
 
 ax1.yaxis.grid(color='gray', linestyle='dashed')
 
-_split = spinup_end
+# Place the divider where the spinup was visually shifted to end, not at
+# the raw spinup_end. For configs where spinup runs right up to pi_ctrl
+# (e.g. LR-Spinup with spinup_end=1849, pi_ctrl_start=1824) the shift is
+# 0 and _split = spinup_end as before; for HR-style configs where there
+# is a gap, the divider sits at pi_ctrl_start - 1.
+_split = spinup_end + max(0, pi_ctrl_start - 1 - spinup_end)
 plt.axvline(x=_split,color='black',alpha=0.7,linewidth=3)
 # Position the SPIN / HIST&PICT labels in *axis-relative* coordinates
 # (0-1 along each axis) so they always stay inside the axis bounds
@@ -313,7 +318,12 @@ ax1.set_xlabel('Year', fontsize=17)
 
 ax1.yaxis.grid(color='gray', linestyle='dashed')
 
-_split = spinup_end
+# Place the divider where the spinup was visually shifted to end, not at
+# the raw spinup_end. For configs where spinup runs right up to pi_ctrl
+# (e.g. LR-Spinup with spinup_end=1849, pi_ctrl_start=1824) the shift is
+# 0 and _split = spinup_end as before; for HR-style configs where there
+# is a gap, the divider sits at pi_ctrl_start - 1.
+_split = spinup_end + max(0, pi_ctrl_start - 1 - spinup_end)
 plt.axvline(x=_split,color='black',alpha=0.7,linewidth=3)
 # Position the SPIN / HIST&PICT labels in *axis-relative* coordinates
 # (0-1 along each axis) so they always stay inside the axis bounds
