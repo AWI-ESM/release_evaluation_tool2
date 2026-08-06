@@ -13,6 +13,13 @@ print(SCRIPT_NAME)
 # Mark as started
 update_status(SCRIPT_NAME, " Started")
 
+# Remapped OpenIFS file names differ between model versions - let utils resolve them
+try:
+    from utils import oifs_file
+except ImportError:
+    sys.path.append(os.path.dirname(__file__))
+    from utils import oifs_file
+
 # parameters cell
 input_paths = [historic_path]
 input_names = [historic_name]
@@ -130,7 +137,7 @@ for variable in variables:
         temporary = []
         for exp in tqdm(exps):
 
-            path = exp_path+'/oifs/atm_remapped_1m_pl_'+variable+'_1m_pl_'+f'{exp:04d}-{exp:04d}.nc'
+            path = oifs_file(exp_path, variable, exp, freqs='1m_pl', years=exps)
             temporary = dask.delayed(load_parallel)(variable,path)
             t.append(temporary)
 
