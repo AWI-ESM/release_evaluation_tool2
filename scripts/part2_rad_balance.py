@@ -95,7 +95,10 @@ def load_yearly_data_simple(path, var, years, pattern, freq):
                              decode_times=True, use_cftime=True,
                              combine_attrs='drop_conflicts')
         time_dim = 'time_counter' if 'time_counter' in ds.dims else 'time'
-        ds = ds.chunk({time_dim: 12, "axis_nbounds": 2})
+        # Every dimension must be named: xarray >= 2026.2 rejects a partial
+        # chunks dict, and the time bounds variables carry an extra dimension
+        # (axis_nbounds) that is absent from the echam-preprocessed files.
+        ds = ds.chunk({d: -1 for d in ds.sizes} | {time_dim: 12})
 
         # Get the variable data
         var_data = ds[var]
