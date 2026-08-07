@@ -94,25 +94,25 @@ spinup_name    = model_version + '_spinup'
 spinup_start   = 1350
 spinup_end     = 1679
 
-# piControl: 16 yr at 1850-1865. clim_window_years is bumped down to 16
+# piControl: 18 yr at 1850-1867. clim_window_years is bumped down to 18
 # below so the last-25y window doesn't reach before the run starts.
 pi_ctrl_path   = '/work/bb1469/a270092/runtime/awiesm3-v3.4.2/AWI-ESM3-VEG-HR-piControl/outdata/'
 pi_ctrl_name   = model_version + '_pi-control'
 pi_ctrl_start  = 1850
-pi_ctrl_end    = 1865
+pi_ctrl_end    = 1867
 
-# historical: 30 yr at 1850-1879. Last 25 yr = 1855-1879.
+# historical: 32 yr at 1850-1881. Last 18 yr = 1864-1881.
 historic_path  = '/work/bb1469/a270092/runtime/awiesm3-v3.4.2/AWI-ESM3-VEG-HR-historical/outdata/'
 historic_name  = model_version + '_historic'
 historic_start = 1850
-historic_end   = 1879
+historic_end   = 1881
 
 
 #Misc
 reanalysis             = 'ERA5'
 remap_resolution       = '512x256'
 dpi                    = 300
-# piControl is only 16 yr, so cap the climatology window to its length.
+# piControl is only 18 yr, so cap the climatology window to its length.
 # Real AWI-ESM3 configs at LR use the default 25 yr; this falls back to
 # the AWI-ESM2 / ICON pattern where clim_window_years overrides the
 # default through globals().get('clim_window_years', 25) in the scripts.
@@ -135,6 +135,17 @@ reference_name = 'clim'
 reference_years= 1958
 
 observation_path = '/work/ab0246/a270092/obs/'
+
+# LPJ-GUESS data was not symlinked into a270092 workspaces; use a270089's
+# historical run directly for parts 24/25/26.
+lpjg_path = '/work/bb1469/a270089/runtime/awiesm3-v3.4.2/AWI-ESM3-VEG-HR-CMIP7-historical/outdata/'
+
+# OASIS areas.nc for the OIFS (A320 / TCo319) atm grid. Used by part1
+# mesh plot to draw an OpenIFS resolution map next to the FESOM one.
+# Any run-leg's work/ dir has an identical areas.nc, so pick the first.
+oasis_areas_file = '/work/bb1469/a270089/runtime/awiesm3-v3.4.2/AWI-ESM3-VEG-HR-CMIP7-Spinup_cont3/run_16720101-16731231/work/areas.nc'
+atm_grid_label   = 'OpenIFS\nTCo319 resolution'
+ocn_grid_label   = 'FESOM2\nDARS2 resolution'
 
 # The AWI-ESM3-VEG-HR run straddles a switch to CMIP7-style OIFS output:
 #   - Spinup_cont2 (1350-1649): 6h accumulation (J/m^2 over 6h)
@@ -159,5 +170,5 @@ precip_to_mm_per_day            = 86400000.0
 tool_path      = os.getcwd()
 out_path       = tool_path+'/output/'+model_version+'/'
 os.makedirs(out_path, exist_ok=True)
-mesh = pf.load_mesh(meshpath)
+mesh = pf.load_mesh(meshpath, usepickle=True, usejoblib=False)
 data = xr.open_dataset(meshpath+'/fesom.mesh.diag.nc') if os.path.exists(meshpath+'/fesom.mesh.diag.nc') else None

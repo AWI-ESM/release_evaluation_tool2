@@ -171,7 +171,10 @@ if len(data[var]) == 0 or len(ctrl_data[var]) == 0:
 # extract data
 hist = np.atleast_1d(data[var].flatten() - 273.15)
 pict = np.atleast_1d(ctrl_data[var].flatten() - 273.15)
-pict = pict[0:len(hist)]
+# If pi_control is shorter than historic, truncate both to the same length
+n = min(len(hist), len(pict))
+hist = hist[:n]
+pict = pict[:n]
 
 hist = hist - np.mean(pict)
 pict = pict - np.mean(pict)

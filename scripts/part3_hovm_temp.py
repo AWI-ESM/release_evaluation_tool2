@@ -30,55 +30,44 @@ levels = [-1.5, 1.5, 11]
 mapticks = np.arange(levels[0],levels[1],0.1)
 
 
-# Import utils for dynamic batch sizing
-try:
-    from utils import get_optimal_batch_size
-except ImportError:
-    # If running from different directory
-    sys.path.append(os.path.dirname(__file__))
-    from utils import get_optimal_batch_size
-
-# CDO helper: compute yearly global-mean depth profile for one file
-def load_parallel_fldmean(variable, path, meshpath, mesh_file):
-    data1 = cdo.yearmean(
-        input=f'-fldmean -setctomiss,0 -setgrid,{meshpath}/{mesh_file} {path}',
-        returnArray=variable
+# CDO helper: single call concatenating all years (much faster than per-year calls)
+def load_all_years_fldmean(variable, exp_path, years, meshpath, mesh_file):
+    file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years]
+    existing = [p for p in file_paths if os.path.exists(p)]
+    if not existing:
+        return np.array([])
+    print(f"  CDO fldmean on {len(existing)} files via -cat...")
+    raw = cdo.yearmean(
+        input=(
+            f"-fldmean -setctomiss,0 "
+            f"-setgrid,{meshpath}/{mesh_file} "
+            f"-cat [ {' '.join(existing)} ]"
+        ),
+        returnArray=variable,
     )
-    return np.squeeze(data1)
+    return np.squeeze(raw)
 
 # Load reference data
 path=reference_path+'/'+variable+'.fesom.'+str(reference_years)+'.nc'
 print(f"Loading reference data from {path}...")
-data_ref = load_parallel_fldmean(variable, path, meshpath, mesh_file)
-# Average over time if multi-timestep
+data_ref = np.squeeze(cdo.yearmean(
+    input=f'-fldmean -setctomiss,0 -setgrid,{meshpath}/{mesh_file} {path}',
+    returnArray=variable,
+))
 if data_ref.ndim > 1:
     data_ref = np.nanmean(data_ref, axis=0)
 n_ref_depths = len(data_ref)
 print(f"Reference data shape: {data_ref.shape} ({n_ref_depths} depth levels)")
 
-# Calculate optimal batch size based on first file
-sample_file = f"{input_paths[0]}/{variable}.fesom.{years[0]}.nc"
-chunk_size = get_optimal_batch_size(sample_file, safety_factor=2.0, max_procs=16)
-
 for exp_path, exp_name in zip(input_paths, input_names):
-    print(f"Processing {exp_name} — CDO fldmean + Dask parallel...")
-    
-    file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years]
-    
-    datat = []
-    for i in range(0, len(file_paths), chunk_size):
-        chunk = file_paths[i:i + chunk_size]
-        chunk_t = [dask.delayed(load_parallel_fldmean)(variable, f, meshpath, mesh_file) for f in chunk]
-        with ProgressBar():
-            datat_chunk = dask.compute(*chunk_t, scheduler='synchronous')
-        datat.extend(datat_chunk)
-        print(f"  Batch {i//chunk_size + 1}/{math.ceil(len(file_paths)/chunk_size)} done")
+    print(f"Processing {exp_name} — single CDO fldmean call...")
+    raw = load_all_years_fldmean(variable, exp_path, years, meshpath, mesh_file)
+    # raw shape: (years, depths) or (depths,) for single year
+    raw = np.atleast_2d(raw) if raw.ndim == 1 else raw
 
-    # Per-year results can have mixed shape: some files give (depths,), some
-    # (timesteps, depths). Collapse any non-trailing axis by mean, then
-    # truncate to a common depth count so np.array yields (years, depths).
+    # raw is (years, depths) — each row is already a yearly fldmean depth profile
     arrs = []
-    for d in datat:
+    for d in raw:
         a = np.atleast_1d(np.asarray(d))
         while a.ndim > 1:
             a = np.nanmean(a, axis=0)

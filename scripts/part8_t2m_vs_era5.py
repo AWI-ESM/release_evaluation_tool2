@@ -86,6 +86,10 @@ for exp_path, exp_name in zip(input_paths, input_names):
             
             for exp in chunk:
                 path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
+                # Fallback to the no-'_1m_'-infix naming used by some XIOS
+                # output configs (e.g. the CORE3/TCO95 tuning runs)
+                if not os.path.exists(path):
+                    path = f"{exp_path}/oifs/atm_remapped_1m_{v}_{exp:04d}-{exp:04d}.nc"
                 temporary = dask.delayed(load_parallel)(v, path)
                 chunk_t.append(temporary)
 
