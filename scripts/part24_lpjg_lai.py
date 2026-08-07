@@ -16,7 +16,7 @@ from lpjg_helpers import read_lpjg_output, interpolate_to_grid, find_lpjg_latest
 
 # LPJ-GUESS analysis settings
 GRID_RES = 1.0
-lpjg_analysis_year = find_lpjg_latest_year(spinup_path)
+lpjg_analysis_year = find_lpjg_latest_year(lpjg_path)
 if lpjg_analysis_year is None:
     lpjg_analysis_year = spinup_end - 1
 print(f"LPJ-GUESS analysis year: {lpjg_analysis_year}")
@@ -52,8 +52,8 @@ def plot_variable(ax, df, var, title, vmin, vmax, cmap, units, year):
 
 try:
     # Read LAI output data
-    print(f"Reading LAI data from {spinup_path} for year {lpjg_analysis_year}...")
-    lai_data = read_lpjg_output(spinup_path, "lai.out", lpjg_analysis_year)
+    print(f"Reading LAI data from {lpjg_path} for year {lpjg_analysis_year}...")
+    lai_data = read_lpjg_output(lpjg_path, "lai.out", lpjg_analysis_year)
     
     if lai_data is None or lai_data.empty:
         raise ValueError(f"No LAI data found for year {lpjg_analysis_year}")

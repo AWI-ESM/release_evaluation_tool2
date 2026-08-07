@@ -46,7 +46,7 @@ SBATCH_SETTINGS = """\
 #SBATCH --ntasks=128
 #SBATCH --ntasks-per-node=128
 #SBATCH --partition=compute
-#SBATCH -A bb1469
+#SBATCH -A ab0246
 """
 
 
@@ -193,7 +193,7 @@ for script, run in SCRIPTS.items():
             f.write(f"\nsource $HOME/loadconda.sh\n")  # Load Python module if required
             f.write("\nconda activate reval\n")  # Load Python module if required
             f.write(f"\nexport REVAL_CONFIG={config_path}\n")  # Pass config file path
-            f.write(f"python {script_path}\n")
+            f.write(f"python -u {script_path}\n")
 
         # Submit job and capture job ID
         print(f"Submitting {script} as:")
@@ -224,7 +224,7 @@ if submitted_job_ids:
 #SBATCH --time=00:10:00
 #SBATCH --ntasks=1
 #SBATCH --partition=compute
-#SBATCH -A bb1469
+#SBATCH -A ab0246
 """
     report_script = "slurm_generate_report.sh"
     dep_str = ":".join(submitted_job_ids)
@@ -233,7 +233,7 @@ if submitted_job_ids:
         f.write(f"\nsource $HOME/loadconda.sh\n")
         f.write("conda activate reval\n")
         f.write(f"\nexport REVAL_CONFIG={config_path}\n")
-        f.write("python scripts/generate_report.py\n")
+        f.write("python -u scripts/generate_report.py\n")
 
     result = subprocess.run(
         ["sbatch", f"--dependency=afterany:{dep_str}", report_script],

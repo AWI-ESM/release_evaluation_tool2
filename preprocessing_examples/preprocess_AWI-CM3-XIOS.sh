@@ -57,6 +57,10 @@ done
 wait
 
 
+# Pick whichever OIFS filename exists: with the '_1m_' frequency infix
+# (standard) or without it (CORE3/TCO95 tuning-run XIOS naming).
+ncpick() { if [ -f "$1" ]; then echo "$1"; else echo "$2"; fi; }
+
 printf "##################################\n"
 printf "# split off / interpolate levels #\n"
 printf "##################################\n"
@@ -67,9 +71,9 @@ do
 		cdo -intlevel,10,100,1000,4000 -setctomiss,0 fesom/${var}.fesom.${i}.nc $tmpdir/${var}.fesom.${i}.int.nc &
 	done
 	var='u'
-	cdo sellevel,30000 oifs/atm_remapped_1m_pl_${var}_1m_pl_$(printf "%04d" $i)-$(printf "%04d" $i).nc ${outdir}/${var}_$(printf "%04d" $i)_${tmpstr}_lvl.nc &
+	cdo sellevel,30000 $(ncpick oifs/atm_remapped_1m_pl_${var}_1m_pl_$(printf "%04d" $i)-$(printf "%04d" $i).nc oifs/atm_remapped_1m_pl_${var}_$(printf "%04d" $i)-$(printf "%04d" $i).nc) ${outdir}/${var}_$(printf "%04d" $i)_${tmpstr}_lvl.nc &
 	var='z'
-	cdo sellevel,50000 oifs/atm_remapped_1m_pl_${var}_1m_pl_$(printf "%04d" $i)-$(printf "%04d" $i).nc ${outdir}/${var}_$(printf "%04d" $i)_${tmpstr}_lvl.nc &
+	cdo sellevel,50000 $(ncpick oifs/atm_remapped_1m_pl_${var}_1m_pl_$(printf "%04d" $i)-$(printf "%04d" $i).nc oifs/atm_remapped_1m_pl_${var}_$(printf "%04d" $i)-$(printf "%04d" $i).nc) ${outdir}/${var}_$(printf "%04d" $i)_${tmpstr}_lvl.nc &
 done
 wait
 
@@ -86,7 +90,7 @@ do
 	done
 	for var in ci 2t ttr tcc cp lsp 10u 10v;
 	do
-		cdo cat oifs/atm_remapped_1m_${var}_1m_$(printf "%04d" $i)-$(printf "%04d" $i).nc ${outdir}/${var}_${tmpstr}.nc &
+		cdo cat $(ncpick oifs/atm_remapped_1m_${var}_1m_$(printf "%04d" $i)-$(printf "%04d" $i).nc oifs/atm_remapped_1m_${var}_$(printf "%04d" $i)-$(printf "%04d" $i).nc) ${outdir}/${var}_${tmpstr}.nc &
 	done
 	for var in temp salt;
 	do

@@ -73,7 +73,10 @@ try:
         print(f"ERROR: Preprocessing script not found: {preprocess_script}")
         update_status(SCRIPT_NAME, " Failed - preprocessing script missing")
         sys.exit(1)
-    flux_scale = "21600"
+    # Pull from the config instead of hard-coding 21600 -- AWI-ESM3-VEG-HR
+    # is post-CMIP7 on its historic / pi_ctrl windows (accumulation_period
+    # = 3600) and the old constant divided fluxes by 6x too much.
+    flux_scale = str(accumulation_period)
     cmd = ["bash", preprocess_script, historic_path, cmpi_input_path,
            model_version, str(historic_start), str(historic_end),
            gridfile, "true", flux_scale]

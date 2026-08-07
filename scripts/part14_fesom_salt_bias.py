@@ -754,7 +754,6 @@ def plot(
 
     fig, ax = create_proj_figure(mapproj, rowscol, figsize)
     # Leave room at the bottom for the horizontal colorbar at y=0.06.
-    fig.subplots_adjust(bottom=0.18, top=0.95, left=0.05, right=0.95)
 
     if isinstance(ax, np.ndarray):
         ax = ax.flatten()

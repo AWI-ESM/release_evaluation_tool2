@@ -106,9 +106,16 @@ for exp in runs:
     # overlaying pi_ctrl as a separate forced branch from the same start.
     # Without this the historic run (e.g. 1850-2019) and spinup
     # (2001-5830) end up on disjoint x-axes covering 1850-6000.
+    # And when the spinup ends well before pi_ctrl_start (e.g. AWI-ESM3-VEG-HR
+    # with spinup ending 1679 but historic / pi_ctrl starting 1850), shift the
+    # spinup forward so it lands immediately before pi_ctrl_start with no gap.
     if exp == historic_name:
         offset = pi_ctrl_start - year_start
         years = np.linspace(year_start + offset, year_end + offset,
+                            year_end - year_start + 1)
+    elif exp == spinup_name:
+        spinup_shift = max(0, pi_ctrl_start - 1 - spinup_end)
+        years = np.linspace(year_start + spinup_shift, year_end + spinup_shift,
                             year_end - year_start + 1)
     else:
         years = np.linspace(year_start, year_end, year_end - year_start + 1)
@@ -151,7 +158,12 @@ ax1.set_xlabel('Year', fontsize=17)
 
 ax1.yaxis.grid(color='gray', linestyle='dashed')
 
-_split = spinup_end
+# Place the divider where the spinup was visually shifted to end, not at
+# the raw spinup_end. For configs where spinup runs right up to pi_ctrl
+# (e.g. LR-Spinup with spinup_end=1849, pi_ctrl_start=1824) the shift is
+# 0 and _split = spinup_end as before; for HR-style configs where there
+# is a gap, the divider sits at pi_ctrl_start - 1.
+_split = spinup_end + max(0, pi_ctrl_start - 1 - spinup_end)
 plt.axvline(x=_split,color='black',alpha=0.7,linewidth=3)
 # Position the SPIN / HIST&PICT labels in *axis-relative* coordinates
 # (0-1 along each axis) so they always stay inside the axis bounds
@@ -254,9 +266,16 @@ for exp in runs:
     # overlaying pi_ctrl as a separate forced branch from the same start.
     # Without this the historic run (e.g. 1850-2019) and spinup
     # (2001-5830) end up on disjoint x-axes covering 1850-6000.
+    # And when the spinup ends well before pi_ctrl_start (e.g. AWI-ESM3-VEG-HR
+    # with spinup ending 1679 but historic / pi_ctrl starting 1850), shift the
+    # spinup forward so it lands immediately before pi_ctrl_start with no gap.
     if exp == historic_name:
         offset = pi_ctrl_start - year_start
         years = np.linspace(year_start + offset, year_end + offset,
+                            year_end - year_start + 1)
+    elif exp == spinup_name:
+        spinup_shift = max(0, pi_ctrl_start - 1 - spinup_end)
+        years = np.linspace(year_start + spinup_shift, year_end + spinup_shift,
                             year_end - year_start + 1)
     else:
         years = np.linspace(year_start, year_end, year_end - year_start + 1)
@@ -299,7 +318,12 @@ ax1.set_xlabel('Year', fontsize=17)
 
 ax1.yaxis.grid(color='gray', linestyle='dashed')
 
-_split = spinup_end
+# Place the divider where the spinup was visually shifted to end, not at
+# the raw spinup_end. For configs where spinup runs right up to pi_ctrl
+# (e.g. LR-Spinup with spinup_end=1849, pi_ctrl_start=1824) the shift is
+# 0 and _split = spinup_end as before; for HR-style configs where there
+# is a gap, the divider sits at pi_ctrl_start - 1.
+_split = spinup_end + max(0, pi_ctrl_start - 1 - spinup_end)
 plt.axvline(x=_split,color='black',alpha=0.7,linewidth=3)
 # Position the SPIN / HIST&PICT labels in *axis-relative* coordinates
 # (0-1 along each axis) so they always stay inside the axis bounds

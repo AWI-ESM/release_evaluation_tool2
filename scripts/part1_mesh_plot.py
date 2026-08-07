@@ -95,13 +95,10 @@ ax.set_ylabel('K')
 ax.set_title(mesh_name+" mesh resolution",fontweight="bold")
 ax.add_feature(cfeature.NaturalEarthFeature('physical', 'land', '110m', edgecolor='face', facecolor='lightgrey'))
 
-plt.tight_layout() 
-
 gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
               linewidth=1, color='gray', alpha=0.2, linestyle='-')
 gl.bottom_labels = False
 
-fig.subplots_adjust(bottom=0.18, top=0.95, left=0.05, right=0.95)
 cbar_ax_abs = fig.add_axes([0.15, 0.06, 0.7, 0.04])
 cbar_ax_abs.tick_params(labelsize=12)
 

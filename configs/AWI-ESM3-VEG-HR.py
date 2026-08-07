@@ -1,0 +1,174 @@
+############################
+# Module loading           #
+############################
+
+#Misc
+import os
+import sys
+import warnings
+from tqdm import tqdm
+import logging
+import joblib
+import dask
+from dask import delayed, compute
+from dask.diagnostics import ProgressBar
+import random as rd
+import time
+import copy as cp
+import subprocess
+
+
+#Data access and structures
+import pyfesom2 as pf
+import xarray as xr
+from cdo import *
+cdo = Cdo(cdo=os.path.join(sys.prefix, 'bin')+'/cdo')
+from netCDF4 import Dataset
+import numpy as np
+import pandas as pd
+from collections import OrderedDict
+import csv
+from bg_routines.update_status import update_status
+
+#Plotting
+import math as ma
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import matplotlib.colors as colors
+from matplotlib.ticker import (MultipleLocator, FormatStrFormatter,
+                               AutoMinorLocator)
+from matplotlib.ticker import Locator
+from matplotlib import ticker
+from matplotlib import cm
+import seaborn as sns
+from cartopy import config
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+from cartopy.util import add_cyclic_point
+import cmocean as cmo
+from cmocean import cm as cmof
+import matplotlib.pylab as pylab
+import matplotlib.patches as Polygon
+import matplotlib.ticker as mticker
+
+
+#Science
+import math
+from math import sqrt
+from sklearn.metrics import mean_squared_error
+from eofs.standard import Eof
+from eofs.examples import example_data_path
+import shapely
+from scipy import signal
+from scipy.stats import linregress
+from scipy.spatial import cKDTree
+from scipy.interpolate import CloughTocher2DInterpolator, LinearNDInterpolator, NearestNDInterpolator
+
+
+#Fesom related routines
+from bg_routines.set_inputarray  import *
+from bg_routines.sub_fesom_mesh  import *
+from bg_routines.sub_fesom_data  import *
+from bg_routines.sub_fesom_moc   import *
+from bg_routines.colormap_c2c    import *
+
+
+############################
+# Simulation Configuration #
+############################
+
+# AWI-ESM3-VEG-HR (TCO199 atm / HR FESOM mesh ~ 3.15M nodes).
+# Three runs unified into one workspace tree under /work/bb1469/a270092/
+# by preprocessing_examples/setup_AWI-ESM3-VEG-HR_workspaces.sh which
+# symlinks the source dirs (Spinup_cont2 + Spinup_cont3 + piControl +
+# historical) with the reval-expected file names. See that script for
+# the year-by-year provenance.
+model_version  = 'AWI-ESM3-VEG-HR'
+oasis_oifs_grid_name = 'A320'
+
+# Spinup: Spinup_cont2 (1350-1649, awiesm3-v3.4.1) merged with
+# Spinup_cont3 (1650-1679, awiesm3-v3.4.2). 330 yr total.
+spinup_path    = '/work/bb1469/a270092/runtime/awiesm3-v3.4.2/AWI-ESM3-VEG-HR-Spinup/outdata/'
+spinup_name    = model_version + '_spinup'
+spinup_start   = 1350
+spinup_end     = 1679
+
+# piControl: 18 yr at 1850-1867. clim_window_years is bumped down to 18
+# below so the last-25y window doesn't reach before the run starts.
+pi_ctrl_path   = '/work/bb1469/a270092/runtime/awiesm3-v3.4.2/AWI-ESM3-VEG-HR-piControl/outdata/'
+pi_ctrl_name   = model_version + '_pi-control'
+pi_ctrl_start  = 1850
+pi_ctrl_end    = 1867
+
+# historical: 32 yr at 1850-1881. Last 18 yr = 1864-1881.
+historic_path  = '/work/bb1469/a270092/runtime/awiesm3-v3.4.2/AWI-ESM3-VEG-HR-historical/outdata/'
+historic_name  = model_version + '_historic'
+historic_start = 1850
+historic_end   = 1881
+
+
+#Misc
+reanalysis             = 'ERA5'
+remap_resolution       = '512x256'
+dpi                    = 300
+# piControl is only 18 yr, so cap the climatology window to its length.
+# Real AWI-ESM3 configs at LR use the default 25 yr; this falls back to
+# the AWI-ESM2 / ICON pattern where clim_window_years overrides the
+# default through globals().get('clim_window_years', 25) in the scripts.
+clim_window_years      = min(25, pi_ctrl_end - pi_ctrl_start + 1)
+historic_last25y_start = historic_end - (clim_window_years - 1)
+historic_last25y_end   = historic_end
+status_csv             = "log/status.csv"
+
+# HR FESOM2 mesh: DARS2 (3,146,761 nod2). The /work/.../HR/ dir holds an
+# older 1.3M-node mesh that doesn't match this run's output (file nod2
+# = 3,146,761), so point at dars2 which does.
+mesh_name      = 'DARS2'
+grid_name      = 'TCo319'
+meshpath       = '/work/ab0246/a270092/input/fesom2/dars2/'
+mesh_file      = 'mesh.nc'
+griddes_file   = 'mesh.nc'
+abg            = [0, 0, 0]
+reference_path = '/work/ab0246/a270092/postprocessing/climatologies/DARS2/'
+reference_name = 'clim'
+reference_years= 1958
+
+observation_path = '/work/ab0246/a270092/obs/'
+
+# LPJ-GUESS data was not symlinked into a270092 workspaces; use a270089's
+# historical run directly for parts 24/25/26.
+lpjg_path = '/work/bb1469/a270089/runtime/awiesm3-v3.4.2/AWI-ESM3-VEG-HR-CMIP7-historical/outdata/'
+
+# OASIS areas.nc for the OIFS (A320 / TCo319) atm grid. Used by part1
+# mesh plot to draw an OpenIFS resolution map next to the FESOM one.
+# Any run-leg's work/ dir has an identical areas.nc, so pick the first.
+oasis_areas_file = '/work/bb1469/a270089/runtime/awiesm3-v3.4.2/AWI-ESM3-VEG-HR-CMIP7-Spinup_cont3/run_16720101-16731231/work/areas.nc'
+atm_grid_label   = 'OpenIFS\nTCo319 resolution'
+ocn_grid_label   = 'FESOM2\nDARS2 resolution'
+
+# The AWI-ESM3-VEG-HR run straddles a switch to CMIP7-style OIFS output:
+#   - Spinup_cont2 (1350-1649): 6h accumulation (J/m^2 over 6h)
+#   - Spinup_cont3 (1650-1679) + piControl + historical: 1h
+#     accumulation (CMIP7 output config)
+# `accumulation_period` is the default that all scripts using single-
+# scalar division see; the historic + piControl + last-25y windows all
+# fall in the CMIP7 era so 3600 is right. Scripts that consume the long
+# spinup timeline (part2 rad balance, part20 Gregory) consult
+# accumulation_period_pre_cmip7 / accumulation_period_cmip7_year and
+# apply the per-year split.
+accumulation_period             = 3600
+accumulation_period_pre_cmip7   = 21600
+accumulation_period_cmip7_year  = 1650
+# AWI-ESM3 XIOS emits precip (lsp, cp) in m of water-equivalent depth
+# (units string = 'm') accumulated over `accumulation_period`. Dividing
+# by accumulation_period yields m/s; * 1000 (m -> mm) * 86400 (s/day)
+# gives mm/day. AWI-ESM2 and ICON-FESOM configs override this to 86400
+# because their precip is already in kg/m^2/s (1 kg/m^2 = 1 mm of water).
+precip_to_mm_per_day            = 86400000.0
+
+tool_path      = os.getcwd()
+out_path       = tool_path+'/output/'+model_version+'/'
+os.makedirs(out_path, exist_ok=True)
+mesh = pf.load_mesh(meshpath, usepickle=True, usejoblib=False)
+data = xr.open_dataset(meshpath+'/fesom.mesh.diag.nc') if os.path.exists(meshpath+'/fesom.mesh.diag.nc') else None

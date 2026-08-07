@@ -19,7 +19,7 @@ except ImportError:
 # parameters cell
 input_paths = [historic_path]
 input_names = [historic_name]
-exps = list(range(historic_last25y_start, historic_last25y_end+1))
+exps = list(range(historic_end - 24, historic_end + 1))
 variables=['u','t']
 res=[320, 160]
 
@@ -156,7 +156,7 @@ i = 0
 
 x = [100,92.5,85,70,60,50,40,30,25,20,15,10,7,5,3,2,1,0.5,0.1]
 x=np.asarray(x)
-time = np.arange(historic_last25y_start, historic_last25y_end+1, 0.0834)
+time = np.arange(historic_end - 24, historic_end + 1, 0.0834)
 
 
 for key in input_names:
