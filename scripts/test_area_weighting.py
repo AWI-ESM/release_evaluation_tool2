@@ -6,6 +6,13 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from config import *
+
+# Remapped OpenIFS file names differ between model versions - let utils resolve them
+try:
+    from utils import oifs_file
+except ImportError:
+    sys.path.append(os.path.dirname(__file__))
+    from utils import oifs_file
 import xarray as xr
 import numpy as np
 
@@ -13,7 +20,7 @@ def test_area_weighting():
     print("=== Testing Area Weighting ===")
     
     # Test file
-    test_file = f"{spinup_path}/oifs/atm_remapped_1m_ssr_1m_{spinup_start}-{spinup_start}.nc"
+    test_file = oifs_file(spinup_path, 'ssr', spinup_start)
     print(f"Test file: {test_file}")
     
     # Load data

@@ -13,6 +13,13 @@ print(SCRIPT_NAME)
 # Mark as started
 update_status(SCRIPT_NAME, " Started")
 
+# Remapped OpenIFS file names differ between model versions - let utils resolve them
+try:
+    from utils import oifs_files, require_matching_coverage
+except ImportError:
+    sys.path.append(os.path.dirname(__file__))
+    from utils import oifs_files, require_matching_coverage
+
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
@@ -80,15 +87,17 @@ def load_model_crf_data(exp_path, exp_name, years):
     # Variables needed for CRF calculation
     variables = ['tsr', 'tsrc', 'ttr', 'ttrc']  # TOA SW/LW all-sky and clear-sky
     data = {}
-    
+
+    # All-sky and clear-sky are differenced below, so they must cover the same
+    # years - a mismatch gives a plausible-looking but unphysical bias.
+    shared = require_matching_coverage(exp_path, variables, years)
+    if len(shared) < len(list(years)):
+        print(f"  NOTE: using {len(shared)} of {len(list(years))} configured years")
+
     for var in variables:
         print(f"  Loading {var}...")
-        files = []
-        for year in years:
-            filepath = f"{exp_path}/oifs/atm_remapped_1m_{var}_1m_{year:04d}-{year:04d}.nc"
-            if os.path.exists(filepath):
-                files.append(filepath)
-        
+        files, _ = oifs_files(exp_path, var, years, warn_missing=False)
+
         if not files:
             print(f"ERROR: No files found for {var}")
             return None
@@ -99,7 +108,7 @@ def load_model_crf_data(exp_path, exp_name, years):
                              decode_times=True, use_cftime=True,
                              combine_attrs='drop_conflicts')
         time_dim = 'time_counter' if 'time_counter' in ds.dims else 'time'
-        ds = ds.chunk({time_dim: 12})
+        ds = ds.chunk({d: -1 for d in ds.sizes} | {time_dim: 12})
 
         var_data = ds[var] / accumulation_period  # Normalize flux
 

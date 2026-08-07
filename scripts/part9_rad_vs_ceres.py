@@ -13,6 +13,13 @@ print(SCRIPT_NAME)
 # Mark as started
 update_status(SCRIPT_NAME, " Started")
 
+# Remapped OpenIFS file names differ between model versions - let utils resolve them
+try:
+    from utils import oifs_file, detect_oifs_pattern
+except ImportError:
+    sys.path.append(os.path.dirname(__file__))
+    from utils import oifs_file, detect_oifs_pattern
+
 
 # parameters cell
 input_paths = [historic_path]
@@ -40,7 +47,7 @@ def define_rowscol(input_paths, columns=len(input_paths), reduce=0):
 # only emits the net signal `srads`; reconstructing ssrd needs the
 # per-surface-type fluxes weighted by cover fractions. Skip for now.
 _avail = [v for v in ['str', 'ssr', 'ssrd']
-          if os.path.exists(f"{historic_path}/oifs/atm_remapped_1m_{v}_1m_{exps[0]:04d}-{exps[0]:04d}.nc")]
+          if detect_oifs_pattern(historic_path, v, exps)[0] is not None]
 print(f"  available variables for this run: {_avail}")
 for variable in _avail:
     if variable == 'str':
@@ -74,7 +81,7 @@ for variable in _avail:
         datat = []
         t = []
         for exp in tqdm(exps):
-            path = f"{exp_path}/oifs/atm_remapped_1m_{variable}_1m_{exp:04d}-{exp:04d}.nc"
+            path = oifs_file(exp_path, variable, exp, years=exps)
             temporary = dask.delayed(load_parallel)(variable, path)
             t.append(temporary)
 
