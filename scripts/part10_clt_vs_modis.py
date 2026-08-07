@@ -12,6 +12,14 @@ print(SCRIPT_NAME)
 
 # Mark as started
 update_status(SCRIPT_NAME, " Started")
+
+# Remapped OpenIFS file names differ between model versions - let utils resolve them
+try:
+    from utils import oifs_file, detect_oifs_pattern
+except ImportError:
+    sys.path.append(os.path.dirname(__file__))
+    from utils import oifs_file, detect_oifs_pattern
+
 # Load MODIS climatology data
 
 # parameters cell
@@ -35,14 +43,9 @@ variable = ['tcc', 'lcc', 'hcc']
 # as 'tcc'). This keeps the script a no-op filter for AWI-ESM2/3 / AWI-CM3
 # (which preprocess all three) while letting tcc-only runs degrade
 # gracefully.
-import glob
-_oifs_dir = historic_path + '/oifs/'
 variable = [
     v for v in variable
-    if any(
-        os.path.exists(f"{_oifs_dir}atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc")
-        for exp in exps
-    )
+    if detect_oifs_pattern(historic_path, v, exps)[0] is not None
 ]
 if not variable:
     update_status(SCRIPT_NAME, ' Skipped (no cloud vars in this preproc)')
@@ -90,7 +93,7 @@ for exp_path, exp_name in zip(input_paths, input_names):
             chunk = exps[i:i + chunk_size]
             t = []
             for exp in chunk:
-                path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
+                path = oifs_file(exp_path, v, exp, years=exps)
                 t.append(dask.delayed(load_parallel)(v, path))
             with ProgressBar():
                 datat_chunk = dask.compute(*t, scheduler='synchronous')

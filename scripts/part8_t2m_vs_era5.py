@@ -13,6 +13,13 @@ print(SCRIPT_NAME)
 # Mark as started
 update_status(SCRIPT_NAME, " Started")
 
+# Remapped OpenIFS file names differ between model versions - let utils resolve them
+try:
+    from utils import oifs_file
+except ImportError:
+    sys.path.append(os.path.dirname(__file__))
+    from utils import oifs_file
+
 
 mesh = pf.load_mesh(meshpath)
 data = xr.open_dataset(meshpath+'/fesom.mesh.diag.nc')
@@ -85,11 +92,7 @@ for exp_path, exp_name in zip(input_paths, input_names):
             chunk_t = []
             
             for exp in chunk:
-                path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
-                # Fallback to the no-'_1m_'-infix naming used by some XIOS
-                # output configs (e.g. the CORE3/TCO95 tuning runs)
-                if not os.path.exists(path):
-                    path = f"{exp_path}/oifs/atm_remapped_1m_{v}_{exp:04d}-{exp:04d}.nc"
+                path = oifs_file(exp_path, v, exp, years=exps)
                 temporary = dask.delayed(load_parallel)(v, path)
                 chunk_t.append(temporary)
 

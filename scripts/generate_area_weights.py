@@ -6,13 +6,20 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from config import *
+
+# Remapped OpenIFS file names differ between model versions - let utils resolve them
+try:
+    from utils import oifs_file
+except ImportError:
+    sys.path.append(os.path.dirname(__file__))
+    from utils import oifs_file
 import subprocess
 
 def generate_area_weights():
     print("=== Generating Area Weights for 192x400 Grid ===")
     
     # Use a sample data file to get the grid
-    sample_file = f"{spinup_path}/oifs/atm_remapped_1m_ssr_1m_{spinup_start}-{spinup_start}.nc"
+    sample_file = oifs_file(spinup_path, 'ssr', spinup_start)
     output_weights = "/tmp/grid_area_weights.nc"
     
     # Use CDO to generate grid area weights

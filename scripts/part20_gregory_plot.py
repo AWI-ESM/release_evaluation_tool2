@@ -32,6 +32,13 @@ SCRIPT_NAME = os.path.basename(__file__)
 print(SCRIPT_NAME)
 update_status(SCRIPT_NAME, " Started")
 
+# Remapped OpenIFS file names differ between model versions - let utils resolve them
+try:
+    from utils import detect_oifs_pattern
+except ImportError:
+    sys.path.append(os.path.dirname(__file__))
+    from utils import detect_oifs_pattern
+
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
@@ -60,19 +67,7 @@ PLOT_FILE = "pi_control_drift_analysis.png"
 
 def detect_file_pattern(path, var, years):
     """Detect available file pattern (1m or 6h) for given variable."""
-    # Try 1m files first
-    pattern_1m = f"atm_remapped_1m_{var}_1m_{{year:04d}}-{{year:04d}}.nc"
-    test_file = os.path.join(path, pattern_1m.format(year=years[0]))
-    if os.path.exists(test_file):
-        return pattern_1m, "1m"
-    
-    # Try 6h files
-    pattern_6h = f"atm_remapped_6h_{var}_6h_{{year:04d}}-{{year:04d}}.nc"
-    test_file = os.path.join(path, pattern_6h.format(year=years[0]))
-    if os.path.exists(test_file):
-        return pattern_6h, "6h"
-    
-    return None, None
+    return detect_oifs_pattern(path, var, years, freqs=("1m", "6h"))
 
 def load_yearly_data_simple(path, var, years, pattern, freq):
     """Load and process data to yearly means - simple xarray approach"""
@@ -100,7 +95,10 @@ def load_yearly_data_simple(path, var, years, pattern, freq):
                              decode_times=True, use_cftime=True,
                              combine_attrs='drop_conflicts')
         time_dim = 'time_counter' if 'time_counter' in ds.dims else 'time'
-        ds = ds.chunk({time_dim: 12})
+        # Every dimension must be named: xarray >= 2026.2 rejects a partial
+        # chunks dict, and the time bounds variables carry an extra dimension
+        # (axis_nbounds) that is absent from the echam-preprocessed files.
+        ds = ds.chunk({d: -1 for d in ds.sizes} | {time_dim: 12})
 
         # Get the variable data
         var_data = ds[var]

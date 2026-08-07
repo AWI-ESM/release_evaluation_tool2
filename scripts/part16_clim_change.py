@@ -12,6 +12,13 @@ print(SCRIPT_NAME)
 # Mark as started
 update_status(SCRIPT_NAME, " Started")
 
+# Remapped OpenIFS file names differ between model versions - let utils resolve them
+try:
+    from utils import oifs_file
+except ImportError:
+    sys.path.append(os.path.dirname(__file__))
+    from utils import oifs_file
+
 def global_area_mean(da):
     """Calculate proper area-weighted global mean."""
     # Find latitude coordinate
@@ -49,7 +56,10 @@ def load_yearly_data_simple(path, var):
         # `time_counter`; the AWI-ESM2 echam preprocessor uses `time`.
         ds = xr.open_dataset(path, decode_times=True, use_cftime=True)
         time_dim = 'time_counter' if 'time_counter' in ds.dims else 'time'
-        ds = ds.chunk({time_dim: 12})
+        # Every dimension must be named: xarray >= 2026.2 rejects a partial
+        # chunks dict, and the time bounds variables carry an extra dimension
+        # (axis_nbounds) that is absent from the echam-preprocessed files.
+        ds = ds.chunk({d: -1 for d in ds.sizes} | {time_dim: 12})
 
         # Get the variable data
         var_data = ds[var]
@@ -128,7 +138,7 @@ for exp_path, exp_name in zip(input_paths, input_names):
 
     data_results = []
     for exp in tqdm(hist_exps):
-        path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
+        path = oifs_file(exp_path, v, exp, years=hist_exps)
         yearly_mean = load_yearly_data_simple(path, var)
         if yearly_mean is not None:
             data_results.append(yearly_mean)
@@ -150,7 +160,7 @@ for exp_path, exp_name in zip(ctrl_input_paths, ctrl_input_names):
 
     ctrl_results = []
     for exp in tqdm(ctrl_exps):
-        path = f"{exp_path}/oifs/atm_remapped_1m_{v}_1m_{exp:04d}-{exp:04d}.nc"
+        path = oifs_file(exp_path, v, exp, years=ctrl_exps)
         yearly_mean = load_yearly_data_simple(path, var)
         if yearly_mean is not None:
             ctrl_results.append(yearly_mean)
@@ -389,7 +399,7 @@ for var in ['precip','temp']:
             temporary = []
             for exp in tqdm(hist_exps_25y):
 
-                path = exp_path+'/oifs/atm_remapped_1m_'+v+'_1m_'+f'{exp:04d}-{exp:04d}.nc'
+                path = oifs_file(exp_path, v, exp, years=hist_exps_25y)
                 temporary = dask.delayed(load_parallel)(v,path)
                 t.append(temporary)
 
@@ -409,7 +419,7 @@ for var in ['precip','temp']:
             temporary = []
             for exp in tqdm(ctrl_exps_25y):
 
-                path = exp_path+'/oifs/atm_remapped_1m_'+v+'_1m_'+f'{exp:04d}-{exp:04d}.nc'
+                path = oifs_file(exp_path, v, exp, years=ctrl_exps_25y)
                 temporary = dask.delayed(load_parallel)(v,path)
                 t.append(temporary)
 
