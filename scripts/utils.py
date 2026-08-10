@@ -36,8 +36,8 @@ import math
 # with a warning. Only ever one spelling is used - the two are never combined.
 
 _OIFS_NAME_VARIANTS = (
-    "atm_remapped_{freq}_{var}_{freq}_{{year:04d}}-{{year:04d}}.nc",
     "atm_remapped_{freq}_{var}_{{year:04d}}-{{year:04d}}.nc",
+    "atm_remapped_{freq}_{var}_{freq}_{{year:04d}}-{{year:04d}}.nc",
 )
 
 _oifs_pattern_cache = {}
