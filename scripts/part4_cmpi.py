@@ -35,7 +35,11 @@ try:
     variable, region, climate_model, siconc, tas, clt, pr, rlut, uas, vas, ua, zg, zos, mlotst, thetao, so = cmpisetup()
     
     # Path for preprocessed CMPI input data
-    cmpi_input_path = os.path.join(tool_path, 'input', 'cmpi')
+    # Per-MODEL_VERSION, not tool-global.  preprocess_AWI-CM3-XIOS.sh does
+    # `rm -rf $outdir/tmp` at startup, so two configs evaluated concurrently were
+    # deleting each other's intermediates -- that is what produced the
+    # "Open failed on .../temp.fesom.YYYY.int.nc / No such file" on 2026-08-20.
+    cmpi_input_path = os.path.join(tool_path, 'input', 'cmpi', model_version)
     os.makedirs(cmpi_input_path, exist_ok=True)
     
     print(f"\nCMPI input directory: {cmpi_input_path}")
