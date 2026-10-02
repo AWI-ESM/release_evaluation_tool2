@@ -19,7 +19,11 @@ except ImportError:
 # parameters cell
 input_paths = [historic_path]
 input_names = [historic_name]
-exps = list(range(historic_end - 24, historic_end + 1))
+# Honour the config's climatology window like the other parts do; the hardcoded 25
+# years reached back before the first year of short records (e.g. 2095 for a
+# 2101-2119 run) and died on a missing file.
+_clim_window = globals().get('clim_window_years', 25)
+exps = list(range(historic_end - (_clim_window - 1), historic_end + 1))
 variables=['u','t']
 res=[320, 160]
 
@@ -156,7 +160,8 @@ i = 0
 
 x = [100,92.5,85,70,60,50,40,30,25,20,15,10,7,5,3,2,1,0.5,0.1]
 x=np.asarray(x)
-time = np.arange(historic_end - 24, historic_end + 1, 0.0834)
+# Monthly axis from the first evaluated year, as long as the data actually is.
+time = exps[0] + np.arange(np.shape(data_model_mean[input_names[0]])[0]) / 12.0
 
 
 for key in input_names:
