@@ -179,7 +179,8 @@ ax1.text(0.03, 0.97, 'SPIN', transform=ax1.transAxes,
 # Scale x-tick density to the timeline length: 50 yr majors / 10 yr minors
 # work for the multi-millennium spinup but produce no ticks on a 3-yr run.
 _xspan = abs(ax1.get_xlim()[1] - ax1.get_xlim()[0])
-_majstep = max(1, int(_xspan / 10))
+# the smallest readable step that gives at most ~10 major ticks (was span/10: 1860, 1891, 1922, ...)
+_majstep = next((s for s in (1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000) if s >= _xspan / 10), 1000)
 _minstep = max(1, int(_majstep / 5))
 ax1.xaxis.set_major_locator(MultipleLocator(_majstep))
 ax1.xaxis.set_major_formatter(FormatStrFormatter('%d'))
@@ -191,7 +192,16 @@ ax1.tick_params(axis='both', which='minor', labelsize=12)
 ax1.xaxis.set_minor_locator(MultipleLocator(_minstep))
 
 legend=['Arctic March','Arctic September','Antarctic March','Antarctic September']
-plt.legend(legend,loc='upper left',fontsize=15)
+_annotations = globals().get('spinup_annotations', None)
+if _annotations:
+    # the labels take the top of the axes; the gap between the September and March extents is free
+    plt.legend(legend, loc='center', bbox_to_anchor=(0.5, 0.47), ncol=4, fontsize=14)
+else:
+    plt.legend(legend,loc='upper left',fontsize=15)
+if _annotations:
+    # what changed where along a stitched spin-up (bg_routines/spinup_tools.py)
+    from bg_routines import spinup_tools as st
+    st.annotate_spinup(ax1, _annotations, fontsize=10)
 plt.savefig(out_path+"sea_ice_extent_comparison.png",dpi=300,bbox_inches = "tight")#%%capture
 runs=[spinup_name, historic_name, pi_ctrl_name]
 
@@ -339,7 +349,8 @@ ax1.text(0.03, 0.97, 'SPIN', transform=ax1.transAxes,
 # Scale x-tick density to the timeline length: 50 yr majors / 10 yr minors
 # work for the multi-millennium spinup but produce no ticks on a 3-yr run.
 _xspan = abs(ax1.get_xlim()[1] - ax1.get_xlim()[0])
-_majstep = max(1, int(_xspan / 10))
+# the smallest readable step that gives at most ~10 major ticks (was span/10: 1860, 1891, 1922, ...)
+_majstep = next((s for s in (1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000) if s >= _xspan / 10), 1000)
 _minstep = max(1, int(_majstep / 5))
 ax1.xaxis.set_major_locator(MultipleLocator(_majstep))
 ax1.xaxis.set_major_formatter(FormatStrFormatter('%d'))
@@ -351,7 +362,16 @@ ax1.tick_params(axis='both', which='minor', labelsize=12)
 ax1.xaxis.set_minor_locator(MultipleLocator(_minstep))
 
 legend=['Arctic March','Arctic September','Antarctic March','Antarctic September']
-plt.legend(legend,loc='upper left',fontsize=15)
+_annotations = globals().get('spinup_annotations', None)
+if _annotations:
+    # the labels take the top of the axes; the gap between the September and March extents is free
+    plt.legend(legend, loc='center', bbox_to_anchor=(0.5, 0.47), ncol=4, fontsize=14)
+else:
+    plt.legend(legend,loc='upper left',fontsize=15)
+if _annotations:
+    # what changed where along a stitched spin-up (bg_routines/spinup_tools.py)
+    from bg_routines import spinup_tools as st
+    st.annotate_spinup(ax1, _annotations, fontsize=10)
 plt.savefig(out_path+"sea_ice_extent_comparison.png",dpi=300,bbox_inches = "tight")
 
 

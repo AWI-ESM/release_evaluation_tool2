@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
+from bg_routines import spinup_tools as st
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -13,6 +14,9 @@ update_status(SCRIPT_NAME, " Started")
 
 # # Hovmöller diagram Temperature
 figsize=(7.2, 3.8)
+# room for the rotated labels of an annotated, stitched spin-up
+if globals().get("spinup_annotations", None):
+    figsize=(13, 4.8)
 
 # Load model Data
 data = OrderedDict()
@@ -22,7 +26,12 @@ ofile = 'Hovmoeller_'+variable+'.png'
 
 input_paths = [spinup_path+'/fesom/']
 input_names = [spinup_name]
-years = range(spinup_start, spinup_end+1)
+# A stitched spin-up can run on past spinup_end into the evaluation window
+# (spinup_timeseries_end), and years whose 3D output is not on this machine come from
+# the per-year cache (spinup_cache_path, see bg_routines/spinup_tools.py).
+_ts_end = globals().get('spinup_timeseries_end', spinup_end)
+_cache_dir = globals().get('spinup_cache_path', None)
+years = range(spinup_start, _ts_end+1)
 
 maxdepth = 10000
 
@@ -60,21 +69,31 @@ n_ref_depths = len(data_ref)
 print(f"Reference data shape: {data_ref.shape} ({n_ref_depths} depth levels)")
 
 for exp_path, exp_name in zip(input_paths, input_names):
-    print(f"Processing {exp_name} — single CDO fldmean call...")
-    raw = load_all_years_fldmean(variable, exp_path, years, meshpath, mesh_file)
-    # raw shape: (years, depths) or (depths,) for single year
-    raw = np.atleast_2d(raw) if raw.ndim == 1 else raw
+    if _cache_dir:
+        # Per-year profiles through the cache: cached years are not recomputed, and years
+        # without a 3D file on this machine can be supplied by precompute_spinup_cache.py.
+        print(f"Processing {exp_name}: yearly global-mean profiles, cache {_cache_dir}...")
+        _got, data_full = st.hovm_profiles(cdo, exp_path, variable, years, meshpath, mesh_file, _cache_dir)
+        if len(_got) < len(years):
+            print(f"  {len(years) - len(_got)} of {len(years)} years have neither a file nor a cache entry: "
+                  f"{sorted(set(years) - set(_got))[:10]} ...")
+        years = _got
+    else:
+        print(f"Processing {exp_name} — single CDO fldmean call...")
+        raw = load_all_years_fldmean(variable, exp_path, years, meshpath, mesh_file)
+        # raw shape: (years, depths) or (depths,) for single year
+        raw = np.atleast_2d(raw) if raw.ndim == 1 else raw
 
-    # raw is (years, depths) — each row is already a yearly fldmean depth profile
-    arrs = []
-    for d in raw:
-        a = np.atleast_1d(np.asarray(d))
-        while a.ndim > 1:
-            a = np.nanmean(a, axis=0)
-        arrs.append(a)
-    min_depth = min(a.shape[-1] for a in arrs)
-    arrs = [a[:min_depth] for a in arrs]
-    data_full = np.array(arrs, dtype=np.float32)
+        # raw is (years, depths) — each row is already a yearly fldmean depth profile
+        arrs = []
+        for d in raw:
+            a = np.atleast_1d(np.asarray(d))
+            while a.ndim > 1:
+                a = np.nanmean(a, axis=0)
+            arrs.append(a)
+        min_depth = min(a.shape[-1] for a in arrs)
+        arrs = [a[:min_depth] for a in arrs]
+        data_full = np.array(arrs, dtype=np.float32)
     n_common = min(n_ref_depths, data_full.shape[1])
     data[exp_name] = data_full[:, :n_common]
     
@@ -193,6 +212,8 @@ for exp_name in data_diff:
     axes[i].xaxis.set_minor_locator(MultipleLocator(10))
 
     axes[i].yaxis.set_minor_locator(MinorSymLogLocator(-10e4))
+    st.annotate_spinup(axes[i], globals().get('spinup_annotations', None),
+                       eval_window=(pi_ctrl_start, pi_ctrl_end) if _ts_end > spinup_end else None)
     # turn minor ticks off
     #axes[i].yaxis.set_minor_locator(NullLocator())
 

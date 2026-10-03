@@ -34,7 +34,13 @@ except ImportError:
 # Config
 figsize = (7.2, 3.8)
 var = ['ssr', 'str', 'tsr', 'ttr', 'tsrc', 'ttrc', 'sf', 'slhf', 'sshf']
-exps = list(range(spinup_start, spinup_end + 1))
+# A stitched spin-up can run on into the evaluation window (spinup_timeseries_end) and
+# carry annotations (spinup_annotations); see bg_routines/spinup_tools.py.
+_ts_end = globals().get('spinup_timeseries_end', spinup_end)
+_annotations = globals().get('spinup_annotations', None)
+if _annotations:
+    figsize = (13, 4.8)
+exps = list(range(spinup_start, _ts_end + 1))
 ofile = "radiation_budget.png"
 
 def global_area_mean(da):
@@ -144,7 +150,7 @@ if __name__ == "__main__":
     
     # Radiative drift over the spinup is the diagnostic of interest;
     # historic period is too short to show convergence behaviour.
-    years = list(range(spinup_start, spinup_end + 1))
+    years = list(range(spinup_start, _ts_end + 1))
     
     # Detect file patterns and load data
     patterns = {}
@@ -358,7 +364,11 @@ if __name__ == "__main__":
     axes.tick_params(labelsize='12')
     axes2.tick_params(labelsize='12')
 
-    axes.legend(['Net SFC', 'Net TOA', '\u0394(SFC - TOA)'],fontsize=11)
+    axes.legend(['Net SFC', 'Net TOA', '\u0394(SFC - TOA)'],fontsize=11,
+                loc='lower left' if _annotations else 'best')
+    from bg_routines import spinup_tools as st
+    st.annotate_spinup(axes, _annotations,
+                       eval_window=(pi_ctrl_start, pi_ctrl_end) if _ts_end > spinup_end else None)
     plt.tight_layout()
 
     if ofile is not None:
