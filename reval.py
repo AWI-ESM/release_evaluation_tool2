@@ -186,6 +186,7 @@ SCRIPTS.update({
     "part24_lpjg_lai.py":           True,
     "part25_lpjg_carbon.py":        True,
     "part26_lpjg_pft.py":           True,
+    "part27_amoc_timeseries.py":    True,
 })
 
 # Read `scripts_overrides` from the config without executing it (heavy
