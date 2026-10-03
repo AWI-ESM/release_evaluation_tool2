@@ -186,7 +186,11 @@ SCRIPTS.update({
     "part24_lpjg_lai.py":           True,
     "part25_lpjg_carbon.py":        True,
     "part26_lpjg_pft.py":           True,
-    "part27_amoc_timeseries.py":    True,
+    # Off by default: it reads a year of 3D vertical velocity per spin-up year (seconds and a
+    # gigabyte each), which a multi-millennium spin-up cannot afford in one job. Enable it per
+    # config with scripts_overrides = {"part27_amoc_timeseries.py": True}; results are cached
+    # per year (spinup_cache_path), so a long record can be filled in several runs.
+    "part27_amoc_timeseries.py":    False,
 })
 
 # Read `scripts_overrides` from the config without executing it (heavy

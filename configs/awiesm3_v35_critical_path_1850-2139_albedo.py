@@ -119,6 +119,8 @@ spinup_annotations = [
     (2100, 'albedo; CRUNCEP land, canopy'),
     (2120, 'hemispheric GM; dt 1800 s'),
 ]
+# the AMOC time series is opt-in (reval.py); all 290 years are in the cache
+scripts_overrides = {'part27_amoc_timeseries.py': True}
 _eval_path     = '/albedo/work/projects/p_awiesm3_cmip7/jstreffi/runtime/awiesm3-v3.4/PICAL_crunveg_gmhemi1800/outdata/'
 #Preindustrial Control
 pi_ctrl_path   = _eval_path
