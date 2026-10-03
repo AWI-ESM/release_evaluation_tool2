@@ -47,8 +47,14 @@ print(f"Box Coords: lon({lon_min} to {lon_max}), lat({lat_min} to {lat_max})")
 
 # parameters cell
 variable = 'sst'
+# ENSO is a 2-7 year phenomenon: the Nino3.4 spectrum, its EOF and any event statistics
+# need decades, so a short climatology window makes this part meaningless rather than
+# merely noisy.  Default to the historic window as before, but let a config widen it to
+# the whole record with enso_start / enso_end.
+_enso_start = globals().get('enso_start', historic_start)
+_enso_end   = globals().get('enso_end',   historic_end)
 input_paths = [historic_path+'/fesom/']
-years = range(historic_start, historic_end+1)
+years = range(_enso_start, _enso_end+1)
 figsize=(10, 5)
 
 

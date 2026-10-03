@@ -37,7 +37,44 @@ import shutil
 # Slurm Configuration      #
 ############################
 
-SBATCH_SETTINGS = """\
+# Site detection: albedo (AWI) vs levante (DKRZ).  Override with REVAL_SITE.
+SITE = os.environ.get("REVAL_SITE") or ("albedo" if os.path.isdir("/albedo") else "levante")
+
+if SITE == "albedo":
+    # albedo prod nodes: 128 cores, 256 GB.  smp shares nodes, so ask for a slice
+    # rather than a whole node; the scripts are mostly serial + cdo.
+    SBATCH_SETTINGS = """\
+#!/bin/bash
+#SBATCH --job-name={job_name}
+#SBATCH --output=logs/{job_name}.log
+#SBATCH --error=logs/{job_name}.log
+#SBATCH --time=04:00:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=120G
+#SBATCH --partition=smp
+#SBATCH -A clidyn.clidyn
+#SBATCH --qos=12h
+"""
+    SBATCH_REPORT_SITE = """\
+#SBATCH --ntasks=1
+#SBATCH --mem=8G
+#SBATCH --partition=smp
+#SBATCH -A clidyn.clidyn
+#SBATCH --qos=12h
+"""
+    # RLIMIT_NPROC is 2048 per user: cap BLAS/OpenMP threads or numpy dies when
+    # several jobs share a node.
+    ENV_SETUP = (
+        "export PATH=/albedo/soft/sw/spack-sw/imagemagick/7.0.8-7-xi3o53s/bin:$PATH  # convert (figure trimming); RPATH binary, no LD_LIBRARY_PATH needed\n"
+        "source $HOME/loadconda.sh\n"
+        "conda activate " + os.environ.get(
+            "REVAL_ENV", "/albedo/work/projects/p_awiesm3_cmip7/jstreffi/software/conda_envs/reval") + "\n"
+        "export OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} "
+        "OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}\n"
+    )
+else:
+    SBATCH_SETTINGS = """\
 #!/bin/bash
 #SBATCH --job-name={job_name}
 #SBATCH --output=logs/{job_name}.log
@@ -48,6 +85,12 @@ SBATCH_SETTINGS = """\
 #SBATCH --partition=compute
 #SBATCH -A ab0246
 """
+    SBATCH_REPORT_SITE = """\
+#SBATCH --ntasks=1
+#SBATCH --partition=compute
+#SBATCH -A ab0246
+"""
+    ENV_SETUP = "source $HOME/loadconda.sh\nconda activate reval\n"
 
 
 
@@ -190,8 +233,7 @@ for script, run in SCRIPTS.items():
         # Write the SLURM script
         with open(job_script, "w") as f:
             f.write(SBATCH_SETTINGS.format(job_name=script))
-            f.write(f"\nsource $HOME/loadconda.sh\n")  # Load Python module if required
-            f.write("\nconda activate reval\n")  # Load Python module if required
+            f.write("\n" + ENV_SETUP)  # site-specific conda activation
             f.write(f"\nexport REVAL_CONFIG={config_path}\n")  # Pass config file path
             f.write(f"python -u {script_path}\n")
 
@@ -222,16 +264,12 @@ if submitted_job_ids:
 #SBATCH --output=logs/generate_report.log
 #SBATCH --error=logs/generate_report.log
 #SBATCH --time=00:10:00
-#SBATCH --ntasks=1
-#SBATCH --partition=compute
-#SBATCH -A ab0246
-"""
+""" + SBATCH_REPORT_SITE
     report_script = "slurm_generate_report.sh"
     dep_str = ":".join(submitted_job_ids)
     with open(report_script, "w") as f:
         f.write(SBATCH_REPORT)
-        f.write(f"\nsource $HOME/loadconda.sh\n")
-        f.write("conda activate reval\n")
+        f.write("\n" + ENV_SETUP)
         f.write(f"\nexport REVAL_CONFIG={config_path}\n")
         f.write("python -u scripts/generate_report.py\n")
 

@@ -232,12 +232,27 @@ if USE_SURFACE_BUDGET:
     # Calculate surface energy imbalance (following part2_rad_balance.py)
     # Surface budget = SSR + STR + SSHF + SLHF - SF_heat_flux
     # All fluxes are now in W/m² after normalization by accumulation_period
-    # Convert SF from kg/m²/s to W/m² using heat of fusion (same as part2)
-    # Heat of fusion of water ice = 334 kJ/kg = 334000 J/kg. The original
-    # constant (333_550_000) was off by a factor of 1000 (the "mJ/kg"
-    # label mismatched the value used), which pinned the surface budget
-    # at ~700 W/m².
-    sf_heat_flux = sf_global * 334000  # kg/m^2/s * J/kg -> W/m^2
+    # The sf-to-heat-flux factor depends on the raw sf units, as in part2:
+    #   AWI-ESM3 XIOS:          sf in 'm' (water-equivalent depth, accumulated),
+    #                           so after /accumulation_period it is m/s and needs
+    #                           rho_water * Lf = 1000 * 333550 = 3.3355e8.
+    #   AWI-ESM2 echam preproc: sf in 'kg m-2 s-1', needs Lf alone (334000).
+    # Using 334000 for 'm' made the snow term ~1000x too small (~0.001 instead
+    # of ~0.8 W/m²) and overstated the surface imbalance by that much.
+    _sf_file = os.path.join(SPINUP_PATH, patterns['sf'].format(year=SPINUP_YEARS[0]))
+    try:
+        _sf_units = xr.open_dataset(_sf_file)['sf'].attrs.get('units', '').strip()
+    except Exception:
+        _sf_units = ''
+    if _sf_units == 'kg m-2 s-1':
+        sf_conv = 334_000.0
+    elif _sf_units == 'm':
+        sf_conv = 333_550_000.0
+    else:
+        print(f"WARN: unrecognized sf units '{_sf_units}', defaulting to AWI-ESM3 (rho*Lf=3.34e8)")
+        sf_conv = 333_550_000.0
+    print(f"sf units = '{_sf_units}' -> sf_conv = {sf_conv:g}")
+    sf_heat_flux = sf_global * sf_conv
     energy_imbalance = ssr_global + str_global + sshf_global + slhf_global - sf_heat_flux
     
     print("Surface energy budget components loaded and calculated")

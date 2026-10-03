@@ -163,9 +163,9 @@ if os.path.exists(path):
     points = np.vstack((x_g, y_g)).T
 
     sit = []
-    for t in tqdm(range(giomas['heff']['heff'].shape[0])):
+    for t in tqdm(range(giomas['heff'].shape[0])):
         nn = NearestNDInterpolator(points,
-             np.nan_to_num(np.asarray(giomas['heff']['heff'][t]).flatten(), 0))
+             np.nan_to_num(np.asarray(giomas['heff'][t]).flatten(), 0))
         sit.append(nn((lon2, lat2)))
     sit = np.asarray(sit)
     print(f"[BENCH] GIOMAS loaded+interpolated in {time.time()-t0:.1f}s")

@@ -91,9 +91,19 @@ except:
     has_temp = False
 
 # Get time-averaged data
-u_data = ds_u['u'].mean(dim='time').values  # (nz, elem)
-v_data = ds_v['v'].mean(dim='time').values
-depths = ds_u['nz1'].values
+# The rest of this script indexes as (depth, elem), but FESOM's XIOS output writes u as
+# (time, elem, nz), so the mean comes out (elem, depth).  Transpose by NAME rather than
+# trusting the file's order.
+def _depth_first(da, zname):
+    m = da.mean(dim='time')
+    return m.transpose(zname, ...).values
+_zn = 'nz1' if 'nz1' in ds_u['u'].dims else 'nz'
+u_data = _depth_first(ds_u['u'], _zn)        # (depth, elem)
+v_data = _depth_first(ds_v['v'], _zn)
+# FESOM writes the 47 mid-level depths as 'nz1' in some output configs and 'nz' in others
+# (PICAL/PI200 on CORE3 have only 'nz', length 47, starting at 2.5 m).  Same quantity,
+# different name; fall back rather than dying.
+depths = ds_u['nz1'].values if 'nz1' in ds_u else ds_u['nz'].values
 layer_thickness = np.diff(np.concatenate([[0], depths]))
 
 if has_temp:

@@ -64,15 +64,26 @@ ncpick() { if [ -f "$1" ]; then echo "$1"; else echo "$2"; fi; }
 printf "##################################\n"
 printf "# split off / interpolate levels #\n"
 printf "##################################\n"
+# THROTTLE.  The `wait` below sits outside the year loop, so a 50-year period fanned
+# out ~200 concurrent cdo processes, each interpolating a 3D ocean field.  That
+# exhausted memory and cdo segfaulted, leaving .int.nc files missing for the cat step
+# further down.  cdo itself is fine -- the same command runs clean standalone.
+# Cap the number in flight; CMPI_JOBS can override.
+: "${CMPI_JOBS:=8}"
+throttle() { while [ "$(jobs -rp | wc -l)" -ge "$CMPI_JOBS" ]; do wait -n 2>/dev/null || sleep 1; done; }
+
 for i in `seq $starty $endy`;
 do
 	for var in temp salt;
 	do
+		throttle
 		cdo -intlevel,10,100,1000,4000 -setctomiss,0 fesom/${var}.fesom.${i}.nc $tmpdir/${var}.fesom.${i}.int.nc &
 	done
 	var='u'
+	throttle
 	cdo sellevel,30000 $(ncpick oifs/atm_remapped_1m_pl_${var}_1m_pl_$(printf "%04d" $i)-$(printf "%04d" $i).nc oifs/atm_remapped_1m_pl_${var}_$(printf "%04d" $i)-$(printf "%04d" $i).nc) ${outdir}/${var}_$(printf "%04d" $i)_${tmpstr}_lvl.nc &
 	var='z'
+	throttle
 	cdo sellevel,50000 $(ncpick oifs/atm_remapped_1m_pl_${var}_1m_pl_$(printf "%04d" $i)-$(printf "%04d" $i).nc oifs/atm_remapped_1m_pl_${var}_$(printf "%04d" $i)-$(printf "%04d" $i).nc) ${outdir}/${var}_$(printf "%04d" $i)_${tmpstr}_lvl.nc &
 done
 wait
@@ -92,16 +103,22 @@ do
 	do
 		cdo cat $(ncpick oifs/atm_remapped_1m_${var}_1m_$(printf "%04d" $i)-$(printf "%04d" $i).nc oifs/atm_remapped_1m_${var}_$(printf "%04d" $i)-$(printf "%04d" $i).nc) ${outdir}/${var}_${tmpstr}.nc &
 	done
-	for var in temp salt;
-	do
-		cdo cat $tmpdir/${var}.fesom.${i}.int.nc ${outdir}/${var}_${tmpstr}.nc &
-	done
+	# temp/salt: NOT appended year by year.  `cdo cat new.nc existing.nc` segfaults
+	# (cdo 2.4.4, NetCDF4 unstructured + nvertex=8 cell bounds + depth axis) on every
+	# append after the first, so thetao/so silently ended up with ONE year.  They are
+	# merged in one go with mergetime after this loop instead.
 	var='z'
 	cdo cat ${outdir}/${var}_$(printf "%04d" $i)_${tmpstr}_lvl.nc ${outdir}/${var}_${tmpstr}.nc &
 	var='u'
 	cdo cat ${outdir}/${var}_$(printf "%04d" $i)_${tmpstr}_lvl.nc ${outdir}/${var}_${tmpstr}.nc &
 	wait
 done
+for var in temp salt;
+do
+	rm -f ${outdir}/${var}_${tmpstr}.nc
+	cdo mergetime $(for i in `seq $starty $endy`; do echo $tmpdir/${var}.fesom.${i}.int.nc; done) ${outdir}/${var}_${tmpstr}.nc &
+done
+wait
 
 mkdir -p $outdir
 cd $outdir
