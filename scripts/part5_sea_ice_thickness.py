@@ -43,26 +43,37 @@ elem = mesh.elem  # (n_tri, 3), 0-based
 tri_lons = lon_nodes[elem]
 dateline_mask = (tri_lons.max(axis=1) - tri_lons.min(axis=1)) > 180.0
 
-def _build_triang(lon, lat, elem, bad_base, cartopy_proj):
+# Latitude of the map edge per hemisphere (set_extent below uses the same values)
+edge_lat = {'NH': 50.0, 'SH': -55.0}
+
+def _build_triang(lon, lat, elem, bad_base, cartopy_proj, lat_edge):
     """Pre-project nodes via pyproj (vectorised C) for fast draw-time rendering.
-    Uses proj4_init string directly to avoid slow PROJ authority DB lookup."""
+    Uses proj4_init string directly to avoid slow PROJ authority DB lookup.
+
+    Only triangles with a node inside the square map frame are kept. The frame is
+    the box around the latitude circle lat_edge; handing matplotlib the whole globe
+    (most of it projected far outside the axes) cost about 90 s per figure against
+    about 10 s for the visible part."""
     src = Proj("epsg:4326")
     tgt = Proj(cartopy_proj.proj4_init)
     t = Transformer.from_proj(src, tgt, always_xy=True)
     x, y = t.transform(lon, lat)
-    bad = bad_base | (~np.isfinite(x) | ~np.isfinite(y))[elem].any(axis=1)
-    x = np.where(np.isfinite(x), x, 0.0)
-    y = np.where(np.isfinite(y), y, 0.0)
-    return mtri.Triangulation(x, y, triangles=elem, mask=bad)
+    finite = np.isfinite(x) & np.isfinite(y)
+    half = 1.02 * abs(t.transform(0.0, lat_edge)[1])
+    inside = finite & (np.abs(x) <= half) & (np.abs(y) <= half)
+    keep = ~bad_base & finite[elem].all(axis=1) & inside[elem].any(axis=1)
+    x = np.where(finite, x, 0.0)
+    y = np.where(finite, y, 0.0)
+    return mtri.Triangulation(x, y, triangles=elem[keep]), keep
 
 proj_nh = ccrs.NorthPolarStereo()
 proj_sh = ccrs.SouthPolarStereo()
-triang = {
-    'NH': _build_triang(lon_nodes, lat_nodes, elem, dateline_mask, proj_nh),
-    'SH': _build_triang(lon_nodes, lat_nodes, elem, dateline_mask, proj_sh),
-}
+triang, tri_keep = {}, {}
+for _h, _p in (('NH', proj_nh), ('SH', proj_sh)):
+    triang[_h], tri_keep[_h] = _build_triang(lon_nodes, lat_nodes, elem, dateline_mask, _p, edge_lat[_h])
 print(f"[BENCH] Triangulation built: {time.time()-t0:.1f}s  "
-      f"({elem.shape[0]:,} triangles, {dateline_mask.sum():,} dateline-masked)")
+      f"({elem.shape[0]:,} triangles, {dateline_mask.sum():,} dateline-masked, "
+      f"drawn NH {tri_keep['NH'].sum():,} / SH {tri_keep['SH'].sum():,})")
 
 # ── 2. Load monthly data on native mesh (no remap) ───────────────────────────
 def load_month_native(variable, exp_path, years, month, meshpath, mesh_file):
@@ -108,12 +119,12 @@ for seas in ['March', 'September']:
                 levels = [0.1,0.2,0.4,0.6,0.8,1,1.2,1.4,1.6,1.8,2]
                 proj   = proj_sh
                 ax     = plt.axes(projection=proj)
-                ax.set_extent([-180, 180, -55, -90], ccrs.PlateCarree())
+                ax.set_extent([-180, 180, edge_lat['SH'], -90], ccrs.PlateCarree())
             else:
                 levels = [0.1,0.5,1,1.5,2,2.5,3,3.5,4]
                 proj   = proj_nh
                 ax     = plt.axes(projection=proj)
-                ax.set_extent([-180, 180, 50, 90], ccrs.PlateCarree())
+                ax.set_extent([-180, 180, edge_lat['NH'], 90], ccrs.PlateCarree())
 
             # tripcolor on pre-projected native mesh — transform=proj means
             # "data coords are already in proj space, don't re-project"
