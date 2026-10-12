@@ -103,6 +103,10 @@ CATEGORIES = OrderedDict([
         "patterns": ["ice_cavity_*"],
         "description": "Ice shelf cavity circulation and velocities",
     }),
+    ("Carbon Pools", {
+        "patterns": ["carbon_pools*"],
+        "description": "Ocean (REcoM), land (LPJ-GUESS) and atmospheric (CO2 tracer) carbon pools: time evolution and maps",
+    }),
     ("LPJ-GUESS: LAI", {
         "patterns": ["lpjg_LAI*"],
         "description": "Leaf Area Index from LPJ-GUESS",
