@@ -17,7 +17,9 @@ For every pool whose output exists, over spinup_start..spinup_end:
   ocean       dissolved inorganic carbon and, where written, dissolved and particulate organic
               carbon, integrated over the ocean volume [PgC]
   land        vegetation, litter and soil carbon of LPJ-GUESS, integrated over the land [PgC]
-  atmosphere  mass of the prognostic CO2 tracer, integrated over the pressure levels [PgC]
+  atmosphere  mass of the prognostic CO2 tracer, integrated over the pressure levels [PgC]; in
+              concentration-driven runs, where the tracer is not maintained, the prescribed CO2
+              that the ocean sees (xCO2atm of FESOM-REcoM)
 
 Writes
   carbon_pools_timeseries.png  each pool as the change since the first year, the pools side by
@@ -36,6 +38,7 @@ PGC_PER_MMOL = 12.011e-3 / 1.0e15          # mmol C -> Pg C
 KGC_PER_MMOL = 12.011e-6                   # mmol C -> kg C
 M_AIR, M_CO2, M_C = 28.9647, 44.0095, 12.011
 RE, GRAV = 6371229.0, 9.80665
+PGC_PER_PPM = 5.1352e18 / (M_AIR * 1e-3) * 1e-6 * M_C * 1e-3 / 1e12   # dry air mass of the atmosphere -> 2.13 PgC per ppm
 OCEAN_ORGANIC = ['DOC', 'PhyC', 'DiaC', 'HetC', 'DetC', 'Zoo2C', 'Zoo3C', 'idetz2c']
 N_JOBS = int(os.environ.get('SLURM_CPUS_PER_TASK', 8))
 YEARS = list(range(spinup_start, spinup_end + 1))
@@ -273,6 +276,22 @@ def atmosphere_pool():
                 unit='ppm', label='atmosphere: column-mean CO2 tracer', valid=valid)
 
 
+def prescribed_co2():
+    """CO2 mixing ratio the ocean is given [ppm], area mean of xCO2atm of FESOM-REcoM, per year."""
+    ys = [y for y in YEARS if os.path.isfile(fesom_file('xCO2atm', y))]
+    if not ys:
+        return None
+    md = xr.open_dataset(os.path.join(meshpath, 'fesom.mesh.diag.nc'))
+    area = md['nod_area'].values[0]
+    def one(y):
+        with xr.open_dataset(fesom_file('xCO2atm', y)) as ds:
+            x = ds['xCO2atm'].mean('time').values.astype(np.float64)
+        ok = np.isfinite(x) & (x > 0)
+        return float((x[ok] * area[ok]).sum() / area[ok].sum())
+    ppm = Parallel(n_jobs=N_JOBS)(delayed(one)(y) for y in tqdm(ys, desc='prescribed CO2'))
+    return pd.Series(ppm, index=ys)
+
+
 # --------------------------------------------------------------------------------------------
 # Figures
 # --------------------------------------------------------------------------------------------
@@ -303,12 +322,40 @@ def plot_timeseries(pools):
             parts = {}
             main = ts['CO2']
             if not pools[k]['valid']:
-                ppm = ts['ppm']
-                ax.set_title('atmosphere: CO2 tracer', fontsize=11, fontweight='bold', loc='left')
-                ax.text(0.5, 0.5, f'The CO2 tracer is not a physical field in this run\n'
-                        f'({ppm.iloc[0]:.3g} ppm in {ppm.index[0]}, {ppm.iloc[-1]:.3g} ppm in {ppm.index[-1]}).\n'
-                        'It is left out of the sum and of the maps.', transform=ax.transAxes, ha='center', va='center', fontsize=10, color='0.25')
-                ax.set_yticks([])
+                presc = pools[k].get('prescribed')
+                ax.set_title('atmosphere: prescribed CO2 (the tracer is not maintained in this run)', fontsize=11, fontweight='bold', loc='left')
+                if presc is None:
+                    ppm = ts['ppm']
+                    ax.text(0.5, 0.5, f'The CO2 tracer is not a physical field in this run\n'
+                            f'({ppm.iloc[0]:.3g} ppm in {ppm.index[0]}, {ppm.iloc[-1]:.3g} ppm in {ppm.index[-1]}),\n'
+                            'and no prescribed CO2 (xCO2atm) was found.', transform=ax.transAxes, ha='center', va='center', fontsize=10, color='0.25')
+                    ax.set_yticks([])
+                    continue
+                mass = presc * PGC_PER_PPM
+                ax.plot(mass.index, mass - mass.iloc[0], color=colors_[k], lw=2.2, label='prescribed CO2 (seen by the ocean)')
+                # what the drift of the other pools would do to the atmosphere if it were free
+                other = None
+                for kk in ('ocean', 'land'):
+                    if pools.get(kk):
+                        t2 = pools[kk]['ts']
+                        m2 = t2['DIC'] + t2['organic'] if kk == 'ocean' else t2['total']
+                        other = (m2 - m2.iloc[0]) if other is None else other.add(m2 - m2.iloc[0], fill_value=np.nan)
+                if other is not None:
+                    implied = -other.dropna()
+                    ax.plot(implied.index, implied.values, color=colors_[k], lw=1.2, ls='--', label='carbon released by ocean and land (not added to the atmosphere)')
+                    ax2 = ax.twinx()
+                    lo, hi = ax.get_ylim()
+                    ax2.set_ylim(presc.iloc[0] + lo / PGC_PER_PPM, presc.iloc[0] + hi / PGC_PER_PPM)
+                    ax2.set_ylabel('ppm')
+                    note = (f'{presc.iloc[0]:.2f} ppm = {mass.iloc[0]:.0f} PgC, held fixed;  ocean and land released {implied.iloc[-1]:+.0f} PgC by {implied.index[-1]}, '
+                            f'which would be {implied.iloc[-1] / PGC_PER_PPM:+.0f} ppm')
+                else:
+                    note = f'{presc.iloc[0]:.2f} ppm = {mass.iloc[0]:.0f} PgC, held fixed'
+                ax.axhline(0, color='0.4', lw=0.8)
+                ax.text(0.99, 0.10, note, transform=ax.transAxes, fontsize=8.5, color='0.25', ha='right')
+                ax.set_ylabel('PgC')
+                ax.legend(fontsize=8, loc='upper left', frameon=False)
+                ax.grid(alpha=0.3)
                 continue
         ax.plot(main.index, main - main.iloc[0], color=colors_[k], lw=2.2, label=f'{k} total')
         for (lab, s), ls in zip(parts.items(), ('--', ':')):
@@ -338,7 +385,7 @@ def plot_timeseries(pools):
     ax.plot(common.index, common.values, color='k', lw=2.2, label='sum of the pools shown')
     ax.axhline(0, color='0.4', lw=0.8)
     ax.set_title('all pools: change since the first year', fontsize=11, fontweight='bold', loc='left')
-    ax.text(0.01, 0.04, f'sum, last 30 years {drift(common):+.2f} PgC/yr (years present in every pool)', transform=ax.transAxes, fontsize=8.5, color='0.25')
+    ax.text(0.01, 0.04, f'sum, last 30 years {drift(common):+.2f} PgC/yr (years present in every pool; a prescribed atmosphere is not part of the sum)', transform=ax.transAxes, fontsize=8.5, color='0.25')
     ax.set_ylabel('PgC'); ax.set_xlabel('Year')
     ax.legend(fontsize=8, loc='upper right', frameon=False, ncol=4)
     ax.grid(alpha=0.3)
@@ -382,6 +429,18 @@ try:
     pools = {'ocean': ocean_pool(), 'land': land_pool(), 'atmosphere': atmosphere_pool()}
     if not any(pools.values()):
         raise ValueError('no carbon pool output found (no REcoM DIC, no LPJ-GUESS cpool, no CO2 tracer)')
+    # Concentration-driven runs: the tracer is absent or not maintained, the atmosphere is the
+    # prescribed CO2.
+    atm = pools['atmosphere']
+    if atm is None or not atm['valid']:
+        presc = prescribed_co2()
+        if presc is not None:
+            if atm is None:
+                atm = dict(ts=pd.DataFrame({'CO2': np.nan, 'ppm': np.nan}, index=presc.index), valid=False)
+                pools['atmosphere'] = atm
+            atm['prescribed'] = presc
+            atm['ts'] = atm['ts'].assign(prescribed_ppm=presc, prescribed_PgC=presc * PGC_PER_PPM)
+            print(f'atmosphere: prescribed CO2 {presc.iloc[0]:.2f} to {presc.iloc[-1]:.2f} ppm')
     table = pd.concat({k: p['ts'] for k, p in pools.items() if p}, axis=1)
     table.to_csv(out_path + 'carbon_pools_timeseries.csv', float_format='%.4f')
     print(table.iloc[[0, -1]].T)
