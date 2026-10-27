@@ -31,4 +31,8 @@ dependencies:
   - geopandas
   - setuptools<71
   - pip:
-    - pyfesom2
+    # not PyPI's "pyfesom2" (koldunovn/pyfesom2 0.4.1, stale -- still calls
+    # pandas.read_csv(delim_whitespace=True), removed in pandas>=3) but the
+    # actively maintained FESOM/pyfesom2 fork, pinned to the commit this was
+    # last verified against (2026-09-30, already carries the fix: sep=r"\s+")
+    - git+https://github.com/FESOM/pyfesom2.git@ab5cb20274dae8cc2a0068f5d40d63be8e9d7356
