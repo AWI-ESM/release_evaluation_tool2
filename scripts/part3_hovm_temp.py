@@ -3,7 +3,6 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bg_routines.config_loader import *
-from joblib import Parallel, delayed
 
 SCRIPT_NAME = os.path.basename(__file__)  # Get the current script name
 
@@ -31,39 +30,65 @@ levels = [-1.5, 1.5, 11]
 mapticks = np.arange(levels[0],levels[1],0.1)
 
 
-N_JOBS = int(os.environ.get('SLURM_CPUS_PER_TASK', 8))
+# Layer means are weighted with the nodal area at the top of each layer (nod_area of fesom.mesh.diag.nc), which
+# is zero below the bottom and above ice-shelf bases. fldmean would weight every layer with the 2D surface
+# cell_area of mesh_file, which over-weights coastal and slope nodes at depth.
+WEIGHTS_DIR = os.path.join(os.path.dirname(out_path.rstrip('/')), 'hovm_cache', model_version)
+os.makedirs(WEIGHTS_DIR, exist_ok=True)
 
-# Area of every (layer, node) at the top of the layer: zero below the bottom and above ice-shelf bases. The
-# 2D cell_area of mesh_file is the surface area and over-weights coastal and slope nodes at depth.
-with xr.open_dataset(meshpath+'/fesom.mesh.diag.nc') as md:
-    layer_area = md['nod_area'].values[:-1]                        # (nz1, nod2) from nz interfaces
 
-
-def level_mean(path, variable):
-    """Time mean, area-weighted mean of every layer of one file."""
+def layer_weights(path, variable):
+    """Weights file with the layout of `variable` in `path` (one time step), made once per number of levels."""
     with xr.open_dataset(path) as ds:
-        x = ds[variable].mean('time').values.astype(np.float64)    # (nod2, nz)
-    if x.shape[0] != layer_area.shape[1]:
-        raise ValueError(f"{path}: {x.shape[0]} nodes, but mesh {meshpath} has {layer_area.shape[1]}")
-    nz = min(x.shape[1], layer_area.shape[0])
-    x = x[:, :nz]
-    w = np.where(np.isfinite(x), layer_area[:nz].T, 0.0)
-    return (np.where(w > 0, x, 0.0) * w).sum(0) / w.sum(0)
+        tmpl = ds[variable].isel(time=[0]).load()                    # (1, nod2, nz)
+    with xr.open_dataset(meshpath+'/fesom.mesh.diag.nc') as md:
+        layer_area = md['nod_area'].values[:-1]                      # (nz1, nod2) from nz interfaces
+    if tmpl.shape[1] != layer_area.shape[1]:
+        raise ValueError(f"{path}: {tmpl.shape[1]} nodes, but mesh {meshpath} has {layer_area.shape[1]}")
+    wfile = os.path.join(WEIGHTS_DIR, f"nod_area_{tmpl.dims[1]}{tmpl.shape[1]}_{tmpl.dims[2]}{tmpl.shape[2]}.nc")
+    if not os.path.isfile(wfile):
+        w = np.zeros(tmpl.shape[1:])
+        nz = min(w.shape[1], layer_area.shape[0])
+        w[:, :nz] = layer_area[:nz].T                                # levels beyond the mesh get zero weight
+        tmpl = tmpl.copy(data=w[None])
+        tmpl.encoding = {}
+        tmpl.to_dataset(name=variable).to_netcdf(wfile, encoding={variable: {'_FillValue': None}})
+    return wfile
 
 
+def layer_mean(x, wfile):
+    """CDO operator chain: area-weighted mean of every layer of `x` (missing values excluded), replacing -fldmean."""
+    w = f"-setgrid,{meshpath}/{mesh_file} {wfile}"
+    return f"-div -fldsum -mul {x} {w} -fldsum -mul -ifthenc,1 {x} {w}"
+
+
+# CDO helper: single call concatenating all years (much faster than per-year calls)
 def load_all_years_fldmean(variable, exp_path, years, meshpath, mesh_file):
     file_paths = [f"{exp_path}/{variable}.fesom.{year}.nc" for year in years]
     existing = [p for p in file_paths if os.path.exists(p)]
     if not existing:
         return np.array([])
-    print(f"  area-weighted layer means of {len(existing)} files...")
-    raw = Parallel(n_jobs=N_JOBS)(delayed(level_mean)(p, variable) for p in existing)
-    return np.squeeze(np.array(raw))
+    print(f"  CDO layer means on {len(existing)} files via -cat...")
+    x = (f"-setctomiss,0 "
+         f"-setgrid,{meshpath}/{mesh_file} "
+         f"-cat [ {' '.join(existing)} ]")
+    raw = cdo.yearmean(
+        input=layer_mean(x, layer_weights(existing[0], variable)),
+        returnArray=variable,
+        options='-L',                                                # serialise NetCDF/HDF5 reads of the parallel operator branches
+    )
+    return np.squeeze(raw)
 
 # Load reference data
 path=reference_path+'/'+variable+'.fesom.'+str(reference_years)+'.nc'
 print(f"Loading reference data from {path}...")
-data_ref = level_mean(path, variable)
+data_ref = np.squeeze(cdo.yearmean(
+    input=layer_mean(f'-setctomiss,0 -setgrid,{meshpath}/{mesh_file} {path}', layer_weights(path, variable)),
+    returnArray=variable,
+    options='-L',
+))
+if data_ref.ndim > 1:
+    data_ref = np.nanmean(data_ref, axis=0)
 n_ref_depths = len(data_ref)
 print(f"Reference data shape: {data_ref.shape} ({n_ref_depths} depth levels)")
 
