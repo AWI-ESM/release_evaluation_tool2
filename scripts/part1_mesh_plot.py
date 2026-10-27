@@ -19,8 +19,13 @@ figsize=(9, 5)
 
 mesh = pf.load_mesh(meshpath)
 data = xr.open_dataset(meshpath+'/fesom.mesh.diag.nc')
-nod_area = data['nod_area'][0,:].values
-nod_area = (np.sqrt(nod_area/np.pi)/1e3)*2
+# Resolution as triangle height h (Danilov 2022, doi:10.1029/2022MS003177): for equilateral triangles the
+# dual (node) area is A = 2*h^2/sqrt(3), so h = (sqrt(3)/2)^(1/2)*sqrt(A). The diameter of an equal-area
+# circle, 2*sqrt(A/pi) as in fesom2 mesh_resolution, is 21% coarser. nod_area is taken at the surface
+# (zero under ice shelves) or, where that is zero, at the top of the water column.
+nod_area = data['nod_area'].values
+nod_area = nod_area[np.argmax(nod_area > 0, axis=0), np.arange(nod_area.shape[1])]
+nod_area = np.sqrt(np.sqrt(3)/2*nod_area)/1e3
 
 data=nod_area,
 cmap=get_abs_cmap('mesh_res'),
