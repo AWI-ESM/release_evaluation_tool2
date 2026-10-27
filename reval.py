@@ -41,6 +41,10 @@ import shutil
 SITE = os.environ.get("REVAL_SITE") or ("albedo" if os.path.isdir("/albedo") else "levante")
 
 if SITE == "albedo":
+    # SLURM account: clidyn.clidyn is Jan Streffing's own project, not valid
+    # for every albedo user (confirmed: sbatch rejects it outright for
+    # accounts without that association) -- override with REVAL_ACCOUNT.
+    ACCOUNT = os.environ.get("REVAL_ACCOUNT", "clidyn.clidyn")
     # albedo prod nodes: 128 cores, 256 GB.  smp shares nodes, so ask for a slice
     # rather than a whole node; the scripts are mostly serial + cdo.
     SBATCH_SETTINGS = """\
@@ -53,23 +57,29 @@ if SITE == "albedo":
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=120G
 #SBATCH --partition=smp
-#SBATCH -A clidyn.clidyn
+#SBATCH -A """ + ACCOUNT + """
 #SBATCH --qos=12h
 """
     SBATCH_REPORT_SITE = """\
 #SBATCH --ntasks=1
 #SBATCH --mem=8G
 #SBATCH --partition=smp
-#SBATCH -A clidyn.clidyn
+#SBATCH -A """ + ACCOUNT + """
 #SBATCH --qos=12h
 """
     # RLIMIT_NPROC is 2048 per user: cap BLAS/OpenMP threads or numpy dies when
     # several jobs share a node.
+    # Prepend the env's own bin to PATH directly instead of `source
+    # $HOME/loadconda.sh; conda activate <env>`: a batch script is a fresh
+    # non-login shell, so it never gets $HOME/loadconda.sh for free either way
+    # -- and that file is a per-user convenience script that may not even
+    # exist (confirmed missing for at least 1 albedo user), while every conda
+    # env's bin/ is self-contained and works directly on PATH with no conda
+    # shell-hook needed for a plain `python -u script.py` call.
     ENV_SETUP = (
         "export PATH=/albedo/soft/sw/spack-sw/imagemagick/7.0.8-7-xi3o53s/bin:$PATH  # convert (figure trimming); RPATH binary, no LD_LIBRARY_PATH needed\n"
-        "source $HOME/loadconda.sh\n"
-        "conda activate " + os.environ.get(
-            "REVAL_ENV", "/albedo/work/projects/p_awiesm3_cmip7/jstreffi/software/conda_envs/reval") + "\n"
+        "export PATH=" + os.environ.get(
+            "REVAL_ENV", "/albedo/work/projects/p_awiesm3_cmip7/jstreffi/software/conda_envs/reval") + "/bin:$PATH\n"
         "export OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} "
         "OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}\n"
     )
@@ -242,6 +252,8 @@ for script, run in SCRIPTS.items():
         print(f"Submitting {script} as:")
         result = subprocess.run(["sbatch", job_script], capture_output=True, text=True)
         print(result.stdout.strip())
+        if result.returncode != 0:
+            print(result.stderr.strip())  # sbatch prints its error to stderr, e.g. a bad account/partition -- don't swallow it
         # Parse job ID from "Submitted batch job 12345678"
         if result.returncode == 0 and "Submitted" in result.stdout:
             try:
@@ -278,6 +290,8 @@ if submitted_job_ids:
         ["sbatch", f"--dependency=afterany:{dep_str}", report_script],
         capture_output=True, text=True)
     print(result.stdout.strip())
+    if result.returncode != 0:
+        print(result.stderr.strip())
     shutil.move(report_script, f"tmp/{report_script}")
     print("Report will be generated after all analysis jobs complete.")
 
