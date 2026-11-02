@@ -15,9 +15,11 @@ update_status(SCRIPT_NAME, " Started")
 
 For every pool whose output exists, over spinup_start..spinup_end:
   ocean       dissolved inorganic carbon and, where written, dissolved and particulate organic
-              carbon, integrated over the ocean volume [PgC]
+              carbon, integrated over the ocean volume, plus calcite (phytoplankton, detritus) and
+              the benthic carbon and calcite layers [PgC]
   land        vegetation, litter and soil carbon of LPJ-GUESS, integrated over the land [PgC]
-  atmosphere  mass of the prognostic CO2 tracer, integrated over the pressure levels [PgC]; in
+  atmosphere  mass of the prognostic CO2 tracer [PgC]: its mass-weighted mean mixing ratio times the
+              dry-air mass of the atmosphere (PGC_PER_PPM, the same factor as the prescribed CO2); in
               concentration-driven runs, where the tracer is not maintained, the prescribed CO2
               that the ocean sees (xCO2atm of FESOM-REcoM)
 
@@ -40,6 +42,8 @@ M_AIR, M_CO2, M_C = 28.9647, 44.0095, 12.011
 RE, GRAV = 6371229.0, 9.80665
 PGC_PER_PPM = 5.1352e18 / (M_AIR * 1e-3) * 1e-6 * M_C * 1e-3 / 1e12   # dry air mass of the atmosphere -> 2.13 PgC per ppm
 OCEAN_ORGANIC = ['DOC', 'PhyC', 'DiaC', 'HetC', 'DetC', 'Zoo2C', 'Zoo3C', 'idetz2c']
+OCEAN_CALCITE = ['PhyCalc', 'DetCalc', 'idetz2calc']          # mmol m-3, (nod2, nz1)
+OCEAN_BENTHIC = ['benC', 'benCalc']                           # mmol m-2 per node, no burial
 N_JOBS = int(os.environ.get('SLURM_CPUS_PER_TASK', 8))
 YEARS = list(range(spinup_start, spinup_end + 1))
 CLIM = (pi_ctrl_start, pi_ctrl_end)
@@ -79,21 +83,50 @@ def fesom_file(var, year):
 
 
 def ocean_geometry():
-    """Volume of every (node, layer) cell and the node coordinates, from the mesh diagnostics."""
+    """Volume of every (node, layer) cell, the area of each node's top wet layer and the node
+    coordinates, from the mesh diagnostics."""
     md = xr.open_dataset(os.path.join(meshpath, 'fesom.mesh.diag.nc'))
     zi = np.abs(md['nz'].values)
     dz = np.diff(zi)
-    vol = (md['nod_area'].values[:len(dz)] * dz[:, None]).T        # (nod2, nz1)
+    area = md['nod_area'].values                                      # (nz, nod2)
+    vol = (area[:len(dz)] * dz[:, None]).T                           # (nod2, nz1)
+    top = md['ulevels_nod2D'].values.astype(int) - 1                 # top wet layer, below a cavity
+    atop = area[top, np.arange(area.shape[1])]
     lon = ((md['lon'].values + 180.0) % 360.0) - 180.0
-    return vol, dz, lon, md['lat'].values
+    return vol, dz, atop, lon, md['lat'].values
 
 
-def ocean_year(year, vol, dz):
+def ocean_other(year, vol, atop):
+    """Calcite in the water column and the benthic carbon and calcite [PgC] of one year. Not in
+    DIC or the organic pools; under 1 PgC in total, but part of the closed REcoM budget."""
+    other = 0.0
+    for v in OCEAN_CALCITE + OCEAN_BENTHIC:
+        f = fesom_file(v, year)
+        if not os.path.isfile(f):
+            continue
+        with xr.open_dataset(f) as ds:
+            x = ds[v].mean('time').values.astype(np.float64)
+        x = np.where(np.isfinite(x) & (np.abs(x) < 1e30), x, 0.0)
+        if v in OCEAN_BENTHIC:
+            other += float((x * atop).sum()) * PGC_PER_MMOL
+        else:
+            if x.shape != vol.shape:
+                x = x.T
+            other += float((np.where(x > 0, x, 0.0) * vol).sum()) * PGC_PER_MMOL
+    return other
+
+
+def ocean_year(year, vol, dz, atop):
     """Global inventories [PgC] and the DIC column inventory [kgC m-2] of one year (cached)."""
     fn = os.path.join(cache_dir(year), f'carbon_ocean_{year}.npz')
     if os.path.isfile(fn):
         c = np.load(fn)
-        return float(c['dic']), float(c['org']), c['col']
+        if 'other' in c:
+            return float(c['dic']), float(c['org']), float(c['other']), c['col']
+        # cache written before calcite and benthos were counted: add them
+        other = ocean_other(year, vol, atop)
+        np.savez(fn, dic=c['dic'], org=c['org'], other=other, col=c['col'])
+        return float(c['dic']), float(c['org']), other, c['col']
     with xr.open_dataset(fesom_file('DIC', year)) as ds:
         dic = ds['DIC'].mean('time').values.astype(np.float64)       # mmol m-3, (nod2, nz1)
     wet = np.isfinite(dic) & (dic > 0)
@@ -110,8 +143,9 @@ def ocean_year(year, vol, dz):
         if x.ndim != 2 or x.shape != dic.shape:                      # vertically integrated diagnostics are skipped
             continue
         org += float((np.where(wet & np.isfinite(x), x, 0.0) * vol).sum()) * PGC_PER_MMOL
-    np.savez(fn, dic=total, org=org, col=col.astype(np.float32))
-    return total, org, col
+    other = ocean_other(year, vol, atop)
+    np.savez(fn, dic=total, org=org, other=other, col=col.astype(np.float32))
+    return total, org, other, col
 
 
 def ocean_pool():
@@ -119,10 +153,11 @@ def ocean_pool():
     if not ys:
         print('ocean: no DIC output, pool left out')
         return None
-    vol, dz, lon, lat = ocean_geometry()
-    res = Parallel(n_jobs=N_JOBS)(delayed(ocean_year)(y, vol, dz) for y in tqdm(ys, desc='ocean'))
-    ts = pd.DataFrame({'DIC': [r[0] for r in res], 'organic': [r[1] for r in res]}, index=ys)
-    col = {y: r[2] for y, r in zip(ys, res)}
+    vol, dz, atop, lon, lat = ocean_geometry()
+    res = Parallel(n_jobs=N_JOBS)(delayed(ocean_year)(y, vol, dz, atop) for y in tqdm(ys, desc='ocean'))
+    ts = pd.DataFrame({'DIC': [r[0] for r in res], 'organic': [r[1] for r in res],
+                       'calcite_benthos': [r[2] for r in res]}, index=ys)
+    col = {y: r[3] for y, r in zip(ys, res)}
     mean = lambda a, b: np.mean([col[y] for y in ys if a <= y <= b], axis=0)
     # nearest ocean node on a 1 degree grid, blank where the nearest node is far (land)
     glon, glat = np.meshgrid(np.arange(-179.5, 180, 1.0), np.arange(-89.5, 90, 1.0))
@@ -314,10 +349,13 @@ def atmosphere_year(year):
     dp = np.diff(edges)                                               # Pa per level, surface at standard pressure
     colmass = (q * dp[:, None, None]).sum(0) / GRAV                   # kg CO2 m-2
     w = np.cos(np.deg2rad(x['lat'].values))[:, None] + 0 * colmass
-    area = 4.0 * np.pi * RE ** 2
-    mass = float((colmass * w).sum() / w.sum()) * area * M_C / M_CO2 / 1e12
     ppm_map = colmass / (dp.sum() / GRAV) * M_AIR / M_CO2 * 1e6
     ppm = float((ppm_map * w).sum() / w.sum())
+    # Mass from the mean mixing ratio and the dry-air mass, not from colmass: the levels reach down
+    # to 101325 Pa everywhere, while the model's mean surface pressure is about 98500 Pa, so colmass
+    # overestimates the tracer by about 3 % (521 against 519 PgC in the run log of the cc-LR spin-up).
+    # The same factor converts the prescribed CO2, so the two are comparable.
+    mass = ppm * PGC_PER_PPM
     return mass, ppm, ppm_map, x['lon'].values, x['lat'].values
 
 
@@ -377,7 +415,8 @@ def plot_timeseries(pools):
             series[k] = p['prescribed'] * PGC_PER_PPM
             labels[k] = f"atmosphere, prescribed ({p['prescribed'].iloc[-1]:.1f} ppm)"
         else:
-            series[k] = (ts['DIC'] + ts['organic'] if k == 'ocean' else ts['total'] if k == 'land' else ts['CO2']).dropna()
+            series[k] = (ts['DIC'] + ts['organic'] + ts['calcite_benthos'] if k == 'ocean'
+                         else ts['total'] if k == 'land' else ts['CO2']).dropna()
             labels[k] = k
     fig, (ax, bx) = plt.subplots(2, 1, figsize=(10, 7.5), sharex=True)
 
