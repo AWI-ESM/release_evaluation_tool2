@@ -33,7 +33,7 @@ def find_lpjg_latest_year(base_path):
     """
     base = Path(base_path)
     lpjg_dir = None
-    for d in [base / "lpj_guess", base / "lpjg", base / "lpj-guess"]:
+    for d in [base / "lpj_guess", base / "lpjg", base / "lpj-guess", base]:   # base: lpjg_path may be the lpj_guess dir itself
         if d.exists():
             lpjg_dir = d
             break
@@ -45,7 +45,9 @@ def find_lpjg_latest_year(base_path):
     if not run_dirs:
         run_dirs = sorted(glob.glob(str(lpjg_dir / "*" / "run*")))
     if not run_dirs:
-        return None
+        # Combined output: one table per leg in lpj_guess/YYYYMMDD-YYYYMMDD/ (subjob_combine.sh)
+        legs = _leg_dirs(lpjg_dir)
+        return int(legs[-1][2]) if legs else None
     
     # Check the last run directory for a small output file to find max year
     last_run = Path(run_dirs[-1])
@@ -67,6 +69,17 @@ def find_lpjg_latest_year(base_path):
             if max_year is not None:
                 return max_year
     return None
+
+
+def _leg_dirs(lpjg_dir, probe="lai.out"):
+    """Leg directories YYYYMMDD-YYYYMMDD holding a combined table, as (path, first year, last year),
+    sorted by first year; a leg without the probe file (post-processing not finished) is skipped."""
+    out = []
+    for d in glob.glob(str(Path(lpjg_dir) / "*")):
+        name = Path(d).name
+        if len(name) == 17 and name[8] == "-" and name.replace("-", "").isdigit() and (Path(d) / probe).exists():
+            out.append((d, int(name[:4]), int(name[9:13])))
+    return sorted(out, key=lambda x: x[1])
 
 
 def read_lpjg_output(base_path, filename, year):
@@ -96,6 +109,7 @@ def read_lpjg_output(base_path, filename, year):
         base / "lpj_guess",
         base / "lpjg",
         base / "lpj-guess",
+        base,   # lpjg_path may be the lpj_guess dir itself
     ]
     
     lpjg_dir = None
@@ -114,8 +128,17 @@ def read_lpjg_output(base_path, filename, year):
         # Try nested date-range directories (YYYYMMDD-YYYYMMDD/run*)
         run_dirs = sorted(glob.glob(str(lpjg_dir / "*" / "run*")))
     if not run_dirs:
-        print(f"Warning: No run directories found in {lpjg_dir}")
-        return None
+        # Combined output: one table per leg, in the leg directory that holds the year
+        legs = [(d, y0, y1) for d, y0, y1 in _leg_dirs(lpjg_dir, filename) if y0 <= year <= y1]
+        if not legs:
+            print(f"Warning: no run directories and no leg holding {year} with {filename} in {lpjg_dir}")
+            return None
+        fpath = Path(legs[-1][0]) / filename
+        print(f"Reading combined {fpath}")
+        df = pd.read_csv(fpath, sep=r'\s+')
+        df = df[df['Year'] == year].reset_index(drop=True)
+        print(f"Extracted {len(df)} data points for year {year}")
+        return df if len(df) else None
     
     print(f"Found {len(run_dirs)} run directories in {lpjg_dir}")
     
